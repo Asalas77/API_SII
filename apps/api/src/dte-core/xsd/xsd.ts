@@ -5,7 +5,7 @@ import { XmlDocument, XsdValidator } from 'libxml2-wasm';
 import type { ErrorDetail } from 'libxml2-wasm';
 import { xmlRegisterFsInputProviders } from 'libxml2-wasm/lib/nodejs.mjs';
 
-export type EsquemaSii = 'DTE' | 'EnvioDTE' | 'EnvioBOLETA' | 'RespSII' | 'RespuestaEnvioDTE';
+export type EsquemaSii = 'DTE' | 'EnvioDTE' | 'EnvioBOLETA' | 'RespSII' | 'RespuestaEnvioDTE' | 'EnvioRecibos';
 
 export interface ResultadoXsd {
   valido: boolean;
@@ -18,6 +18,8 @@ const ARCHIVOS: Record<EsquemaSii, string> = {
   EnvioBOLETA: 'EnvioBOLETA_v11.xsd',
   RespSII: 'RespSII_v10.xsd',
   RespuestaEnvioDTE: 'RespuestaEnvioDTE_v10.xsd',
+  // Ley 19.983: carpeta propia porque trae una versión antigua de SiiTypes_v10.xsd.
+  EnvioRecibos: 'recibos/EnvioRecibos_v10.xsd',
 };
 
 let directorioXsd: string | undefined;
