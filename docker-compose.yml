@@ -1,0 +1,39 @@
+# Infraestructura local de desarrollo para API SII.
+# Uso: docker compose up -d postgres   (Redis es opcional por ahora)
+# Si el 5432 está ocupado en tu máquina: POSTGRES_HOST_PORT=5433 docker compose up -d postgres
+# y ajusta DATABASE_PORT en apps/api/.env.
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DATABASE_USER:-api_sii}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:-api_sii}
+      POSTGRES_DB: ${DATABASE_NAME:-api_sii}
+    ports:
+      - '${POSTGRES_HOST_PORT:-5432}:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Redis se usará para colas (BullMQ) de envío al SII en una fase posterior.
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - '${REDIS_HOST_PORT:-6379}:6379'
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  postgres_data:
+  redis_data:
