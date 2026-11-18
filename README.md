@@ -5,6 +5,8 @@ API REST multiempresa para emitir **Documentos Tributarios Electrónicos** (fact
 SAP Business One. Las decisiones de arquitectura, la estrategia de pruebas y el plan por fases están en
 [`docs/01-opciones-arquitectura-y-pruebas.md`](docs/01-opciones-arquitectura-y-pruebas.md).
 
+La documentación de ingeniería de diseño completa (arquitectura, datos, flujos, seguridad, API, pruebas, operación, decisiones y roadmap) está en [`docs/diseno/`](docs/diseno/00-indice.md).
+
 ## Estructura del repositorio
 
 | Ruta | Contenido |
