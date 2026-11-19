@@ -1,4 +1,4 @@
-# sii-gateway (WP4)
+# sii-gateway
 
 Clientes HTTP hacia el SII de Chile. Son clases puras (sin decoradores Nest); el integrador las envuelve en un módulo. Todo se exporta desde `index.ts`.
 
@@ -32,9 +32,13 @@ const cliente = new BoletaApiClient({
 });
 ```
 
-`FirmadorXml` se define en `comun/firmador.ts`. Para el token se invoca `firmarXml(xml)` sin `idReferencia` (firma del documento completo, `URI=""`) y debe usar rsa-sha1, c14n 2001 y enveloped-signature. `fetchImpl` es inyectable (por defecto `globalThis.fetch`).
+`FirmadorXml` se define en `comun/firmador.ts`; la implementación real es `crearFirmadorSii({ certificadoPem, clavePrivadaPem })` de `dte-core` (`firma/firmador-sii.ts`): con `idReferencia` firma el elemento por `ID`, sin él firma el documento completo. `firma-real.spec.ts` prueba los clientes con esa firma real. Para el token se invoca `firmarXml(xml)` sin `idReferencia` (firma del documento completo, `URI=""`) y debe usar rsa-sha1, c14n 2001 y enveloped-signature. `fetchImpl` es inyectable (por defecto `globalThis.fetch`).
 
 Los strings XML se codifican según el encoding declarado en el prólogo (ISO-8859-1 o UTF-8); un `Buffer` se envía tal cual.
+
+## Estados de consulta DTE
+
+`consultarEstadoEnvio` (`getEstUp`) y `consultarEstadoDte` (`getEstDte`) devuelven además `descripcionEstado` y `esFinal` (`dte/estados.ts`, exportados `clasificarEstadoEnvioDte`/`clasificarEstadoDte`). Envío: finales EPR, RPR, RCH, RCO, RCT, RFR, RSC, RPT, VOF; en curso REC, SOK, CRT, FOK, PDR/PRD. Documento: DOK, DNK, FNA, FAN, EMP, TMD, TMC, MMD, MMC, AND, ANC finales; FAU (no recibido) no es final. Códigos de error de consulta (-1 a -14, 001-003) y estados desconocidos: `esFinal: false`. Los códigos RPR/RCH/RCO/RPT/VOF/REC/PRD vienen de la API de boletas, no del PDF de QueryEstUp (que solo lista RSC, SOK, CRT, RFR, FOK, PDR, RCT, EPR).
 
 ## Caché de token
 

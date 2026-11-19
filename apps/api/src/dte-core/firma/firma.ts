@@ -78,6 +78,39 @@ export function firmarXml(xml: string, opciones: OpcionesFirma): string {
   return sig.getSignedXml();
 }
 
+export interface OpcionesFirmaDocumento {
+  certificadoPem: string;
+  clavePrivadaPem: string;
+}
+
+/**
+ * Firma XMLDSig *enveloped* del documento completo (`Reference URI=""`), con los mismos algoritmos que
+ * `firmarXml`. Es la firma de la semilla de autenticación (`<getToken><item><Semilla>…`): la `<Signature>`
+ * queda como último hijo de la raíz. Se conserva textualmente la declaración XML y el resto del documento
+ * (no se agregan saltos de línea ni espacios; el token de boletas exige `<?xml ...?>
+<getToken>…</getToken>`).
+ */
+export function firmarDocumentoCompleto(xml: string, opciones: OpcionesFirmaDocumento): string {
+  const { certificadoPem, clavePrivadaPem } = opciones;
+  const keyInfo = contenidoKeyInfo(certificadoPem);
+  const sig = new SignedXml({
+    privateKey: clavePrivadaPem,
+    publicCert: certificadoPem,
+    signatureAlgorithm: ALG_FIRMA,
+    canonicalizationAlgorithm: ALG_C14N,
+    getKeyInfoContent: () => keyInfo,
+  });
+  sig.addReference({
+    xpath: '/*',
+    transforms: [ALG_ENVELOPED],
+    digestAlgorithm: ALG_DIGEST,
+    uri: '',
+    isEmptyUri: true,
+  });
+  sig.computeSignature(xml, { location: { reference: '/*', action: 'append' } });
+  return sig.getSignedXml();
+}
+
 /**
  * Verifica todas las firmas XMLDSig del documento usando el certificado embebido en `KeyInfo`.
  * `valida` es true solo si existe al menos una firma y todas verifican. No valida la cadena del certificado.

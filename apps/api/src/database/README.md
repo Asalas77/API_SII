@@ -30,7 +30,13 @@ empresas 1──* envios
 - Todas las FK usan `ON DELETE RESTRICT`. Toda tabla de negocio lleva `empresa_id` (multiempresa).
 - Los enums de Postgres tienen nombre explícito (`ambiente_sii_enum`, `estado_documento_enum`, `canal_envio_enum`); `ambiente_sii_enum` es compartido por `empresas` y `envios`.
 
+### Cifrado del CAF y migración `CifrarCafYEmision`
+
+`cafs.xml_cifrado` (bytea, AES-256-GCM vía `CifradoService`) guarda el CAF completo, que incluye la clave privada RSASK. `cafs.xml` queda **nullable y deprecado**: las filas anteriores conservan el XML en claro hasta que `FoliosService` las lee (lo cifra y deja `xml` en NULL) o se llama `FoliosService.cifrarCafsHeredados()`. También agrega `documentos.huella_solicitud` (idempotencia), `documentos.origen` (jsonb) y `empresas.rut_proveedor_software`/`dv_proveedor_software`.
+
 ### Folios
+
+`asignarSiguienteFolio(empresaId, tipo, fecha?, manager?)` acepta un `EntityManager` para participar en la transacción de la emisión: si el documento no se guarda, el folio no se consume. Las fechas (`fecha_vencimiento`, "hoy") se calculan en `America/Santiago`. `registrarCaf` valida el RUT del CAF contra la empresa y calcula el vencimiento (6 meses en 33/56/61; sin vencimiento en el resto) si no viene.
 
 `FoliosService.asignarSiguienteFolio` abre una transacción y selecciona los CAF candidatos (no agotados, no anulados, con folios libres y no vencidos) con `FOR UPDATE`, ordenados por fecha de autorización y `folio_desde`; usa el primero e incrementa `folio_siguiente` (marca `agotado` al terminar el rango). Se bloquean todos los candidatos y no solo uno (`LIMIT 1`) a propósito: con `FOR UPDATE ... LIMIT 1`, si el CAF se agota mientras otra transacción espera, Postgres re-evalúa el `WHERE` y devuelve 0 filas aunque exista otro CAF. `registrarCaf` usa un advisory lock por empresa y tipo para validar el solapamiento de rangos sin carreras.
 

@@ -124,6 +124,18 @@ export interface ImpuestoAdicionalDte {
   monto: number;
 }
 
+/** Proveedor del software de facturación (boletas). */
+export interface ProveedorSoftwareDte {
+  /** Cuerpo numérico del RUT (sin DV). */
+  rut: string;
+  dv: string;
+  /**
+   * Razón social. `EnvioBOLETA_v11.xsd` NO tiene un elemento para ella (solo `RUTProvSW`), por lo que
+   * no se emite; se acepta para conservar el dato del proveedor en el modelo.
+   */
+  razonSocial?: string;
+}
+
 export interface DocumentoDte {
   idDoc: IdDocDte;
   emisor: EmisorDte;
@@ -132,6 +144,11 @@ export interface DocumentoDte {
   descuentosRecargos?: DescuentoRecargoGlobal[];
   referencias?: ReferenciaDte[];
   impuestosAdicionales?: ImpuestoAdicionalDte[];
+  /**
+   * Proveedor de software. Solo boletas (39/41): se emite `RUTProvSW` en `Encabezado`, entre `Receptor`
+   * y `Totales` (posición del XSD). En los demás tipos se ignora (`DTE_v10.xsd` no lo define).
+   */
+  proveedorSoftware?: ProveedorSoftwareDte;
 }
 
 export interface TotalesDte {

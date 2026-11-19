@@ -44,9 +44,17 @@ export class Caf {
   @Column({ name: 'fecha_vencimiento', type: 'date', nullable: true })
   fechaVencimiento: string | null;
 
-  /** XML completo del CAF tal como lo entregó el SII. */
-  @Column({ type: 'text' })
-  xml: string;
+  /**
+   * @deprecated XML del CAF en claro (contiene la clave privada RSASK). Solo existe en filas
+   * anteriores a la migración `CifrarCafYEmision`; `FoliosService` lo cifra al leerlo y lo deja en
+   * null. Los CAF nuevos nunca lo escriben.
+   */
+  @Column({ type: 'text', nullable: true })
+  xml: string | null;
+
+  /** XML completo del CAF (tal como lo entregó el SII) cifrado con AES-256-GCM (`CifradoService`). */
+  @Column({ name: 'xml_cifrado', type: 'bytea', nullable: true })
+  xmlCifrado: Buffer | null;
 
   @Column({ type: 'boolean', default: false })
   agotado: boolean;

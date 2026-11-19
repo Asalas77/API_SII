@@ -133,6 +133,19 @@ export class Documento {
   })
   claveIdempotencia: string | null;
 
+  /** SHA-256 (hex) de la solicitud de emisión; detecta reuso de la clave de idempotencia con otro cuerpo. */
+  @Column({
+    name: 'huella_solicitud',
+    type: 'varchar',
+    length: 64,
+    nullable: true,
+  })
+  huellaSolicitud: string | null;
+
+  /** Metadato opcional para correlacionar con el sistema de origen (p. ej. ERP). */
+  @Column({ type: 'jsonb', nullable: true })
+  origen: unknown;
+
   @CreateDateColumn({ name: 'creado_en', type: 'timestamptz' })
   creadoEn: Date;
 

@@ -7,6 +7,9 @@ import { AppController } from './../src/app.controller.js';
 import { AppService } from './../src/app.service.js';
 import { siiConfig } from './../src/config/index.js';
 import { AppModule } from './../src/app.module.js';
+import { postgresDisponible } from './helpers/db.js';
+
+const hayDb = await postgresDisponible();
 
 // GET / no requiere base de datos: se monta solo AppController con la config SII.
 describe('AppController (e2e)', () => {
@@ -40,7 +43,7 @@ describe('AppController (e2e)', () => {
 });
 
 // Requiere Postgres (docker compose up -d postgres) y .env cargado.
-describe.skipIf(!process.env.DATABASE_HOST)(
+describe.skipIf(!hayDb)(
   'AppModule completo (e2e, con DB)',
   () => {
     let app: INestApplication<App>;

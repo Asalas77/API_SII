@@ -24,3 +24,8 @@ export {
   type RespuestaConsultaSii,
   type ResultadoEnvioDte,
 } from './dte/dte-sii.client.js';
+export {
+  clasificarEstadoDte,
+  clasificarEstadoEnvioDte,
+  type ClasificacionEstado,
+} from './dte/estados.js';

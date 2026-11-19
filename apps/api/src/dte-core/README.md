@@ -8,7 +8,7 @@ Núcleo criptográfico y XML para DTE y boletas electrónicas del SII. Dominio p
 | --- | --- |
 | `caf/` | `parsearCaf`, `folioEnRango`, `cafVigente`, `claveCafCoincide` (firma/verifica un dato con el par del CAF). `xmlCaf` conserva el `<CAF>` textual del archivo. Vencimiento = autorización + 6 meses (`mesesVigencia` parametrizable). |
 | `ted/` | `generarTed` y `verificarTed`. |
-| `firma/` | `firmarXml` y `verificarFirmaXml` (XMLDSig del SII con `xml-crypto`). |
+| `firma/` | `firmarXml` (por `ID`), `firmarDocumentoCompleto` (`URI=""`, semilla de autenticación), `verificarFirmaXml` y `crearFirmadorSii` (adaptador `{ firmarXml(xml, idReferencia?) }` para el gateway; sin id firma el documento completo). |
 | `xml/` | `escaparXml`, `aIso88591`, `desdeIso88591`, `formatearFechaSii`, `formatearTimestampSii`, RUT (`formatearRut`, `calcularDv`, `validarDv`, `validarRut`, `separarRut`). |
 | `xsd/` | `validarXsd(xml, 'DTE'|'EnvioDTE'|'EnvioBOLETA'|'RespSII'|'RespuestaEnvioDTE')` con `libxml2-wasm`; validadores cacheados. |
 | `certificado/` | `cargarPfx` (node-forge): PEM de certificado y clave (PKCS#8), CN, vigencia, RUT del SAN. |
@@ -18,7 +18,7 @@ Núcleo criptográfico y XML para DTE y boletas electrónicas del SII. Dominio p
 
 - **Encoding**: los documentos al SII van en ISO-8859-1. `aIso88591` antepone `<?xml version="1.0" encoding="ISO-8859-1"?>` (reemplazando otra declaración) y convierte; caracteres fuera de Latin-1 se sustituyen por equivalentes (comillas tipográficas, guiones, `…`, etc.) o por `?`.
 - **TED**: orden fijo `RE, TD, F, FE, RR, RSR, MNT, IT1, CAF, TSTED`, sin espacios entre tags. `RSR` e `IT1` se truncan a 40 caracteres *antes* de escapar. En texto solo se escapan `& < >` (el TED se firma textualmente y viaja en el PDF417). `FRMT` = RSA-SHA1 (PKCS#1 v1.5) sobre los bytes ISO-8859-1 del string exacto `<DD>…</DD>`, base64. `verificarTed` extrae `<DD>` textualmente, sin re-serializar.
-- **Firma**: C14N 1.0 (`REC-xml-c14n-20010315`), `rsa-sha1`, digest `sha1`, único transform `enveloped-signature`, `Reference URI="#ID"`. `<Signature xmlns="http://www.w3.org/2000/09/xmldsig#">` sin prefijo, último hijo de la raíz. `KeyInfo` = `KeyValue/RSAKeyValue(Modulus,Exponent)` + `X509Data/X509Certificate` (orden exigido por `xmldsignature_v10.xsd`), generado con `getKeyInfoContent`. `verificarFirmaXml` verifica *todas* las `Signature` del documento (p. ej. SetDTE + cada DTE) con el certificado embebido; no valida la cadena de confianza del certificado.
+- **Firma**: C14N 1.0 (`REC-xml-c14n-20010315`), `rsa-sha1`, digest `sha1`, único transform `enveloped-signature`, `Reference URI="#ID"` (o `URI=""` en `firmarDocumentoCompleto`, que conserva textualmente declaración y saltos del XML: la semilla queda en las 2 líneas que exige el SII). `<Signature xmlns="http://www.w3.org/2000/09/xmldsig#">` sin prefijo, último hijo de la raíz. `KeyInfo` = `KeyValue/RSAKeyValue(Modulus,Exponent)` + `X509Data/X509Certificate` (orden exigido por `xmldsignature_v10.xsd`), generado con `getKeyInfoContent`. `verificarFirmaXml` verifica *todas* las `Signature` del documento (p. ej. SetDTE + cada DTE) con el certificado embebido; no valida la cadena de confianza del certificado.
 - **XSD**: carpeta por `SII_XSD_DIR` o búsqueda hacia arriba de `resources/sii/xsd` desde `import.meta.dirname` (funciona desde `src/` y `dist/`). Se usa la URL `file://` del XSD como base para resolver `include`/`import`.
 - **Fechas**: `formatearFechaSii`/`formatearTimestampSii` usan `America/Santiago` (Intl), sin zona en el string.
 
@@ -30,7 +30,7 @@ Núcleo criptográfico y XML para DTE y boletas electrónicas del SII. Dominio p
 | --- | --- |
 | `documento/tipos.ts` | `DocumentoDte` (`idDoc`, `emisor`, `receptor`, `detalle[]`, `descuentosRecargos[]`, `referencias[]`, `impuestosAdicionales[]`) y `TotalesDte`. |
 | `documento/totales.ts` | `calcularTotales(doc)`, montos enteros en CLP. |
-| `documento/construir-dte.ts` | `construirDte(doc, { caf, certificado, fechaFirma? })` -> `{ xmlFirmado, xmlIso, ted, idDocumento, totales }`. |
+| `documento/construir-dte.ts` | `construirDte(doc, { caf, certificado, fechaFirma?, validarVigenciaCaf? })` -> `{ xmlFirmado, xmlIso, ted, idDocumento, totales }`. |
 | `envio/envio.ts` | `construirEnvioDte` y `construirEnvioBoleta` (sobre + `Caratula` + firma de `SetDoc`). |
 | `testing/documentos-prueba.ts` | Solo pruebas: `cafDePrueba`, `documentoDePrueba`. |
 
@@ -65,13 +65,18 @@ Núcleo criptográfico y XML para DTE y boletas electrónicas del SII. Dominio p
 
 Folio fuera del rango del CAF, CAF de otro tipo o de otro emisor, DV de RUT incorrecto, boleta con `Acteco`, factura sin `Acteco`, notas 56/61 sin referencia al documento (una referencia `SET` no cuenta) o sin `codRef`, 33/39 sin ítems afectos, RUT genérico fuera de boletas, exceso de líneas, fechas mal formadas.
 
+### Vigencia del CAF y proveedor de software
+
+- `construirDte` rechaza (`ErrorValidacionDte`) un CAF vencido a la `fechaEmision` del documento, solo para `TIPOS_CAF_CON_VENCIMIENTO` (33, 56, 61: crédito fiscal, 6 meses, Res. Ex. 58/2017). Boletas, 34 y 52 no vencen. `validarVigenciaCaf: false` lo desactiva. El alcance exacto por tipo sigue marcado "verificar" en la documentación del proyecto.
+- `proveedorSoftware` (`{ rut, dv, razonSocial? }`): en boletas emite `<RUTProvSW>` entre `Receptor` y `Totales`. El XSD solo define `RUTProvSW` (no hay razón social), así que `razonSocial` no se emite; se ignora en tipos que no son boleta.
+
 ### Sobres
 
 `construirEnvioDte`/`construirEnvioBoleta` insertan cada DTE firmado textualmente (solo se quita la declaración XML), agrupan `SubTotDTE` por tipo y firman `SetDoc`. `rutReceptor` por defecto es `60803000-K` (SII); en intercambio se pasa el RUT del cliente. El tipo de cada DTE se lee del texto de `IdDoc/TipoDTE`.
 
 ### Pendientes
 
-Guía de despacho con datos de traslado (Res. 144/2026: `Transporte`, `IndTraslado` ampliado), exportación, liquidaciones, factura de compra (46), retenciones y `IVANoRet`, `SubTotInfo`, `Comisiones`, `OtraMoneda`, ítem espectáculo/`InfoTicket` de boletas, validación de vigencia del CAF.
+Guía de despacho con datos de traslado (Res. 144/2026: `Transporte`, `IndTraslado` ampliado), exportación, liquidaciones, factura de compra (46), retenciones y `IVANoRet`, `SubTotInfo`, `Comisiones`, `OtraMoneda`, ítem espectáculo/`InfoTicket` de boletas.
 
 ## Probar
 

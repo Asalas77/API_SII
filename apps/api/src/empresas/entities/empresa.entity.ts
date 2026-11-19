@@ -66,6 +66,18 @@ export class Empresa {
   @Column({ name: 'fecha_resolucion_sii', type: 'date', nullable: true })
   fechaResolucionSii: string | null;
 
+  /** Proveedor de software (RUTProvSW de las boletas): cuerpo del RUT y DV; ambos o ninguno. */
+  @Column({ name: 'rut_proveedor_software', type: 'int', nullable: true })
+  rutProveedorSoftware: number | null;
+
+  @Column({
+    name: 'dv_proveedor_software',
+    type: 'char',
+    length: 1,
+    nullable: true,
+  })
+  dvProveedorSoftware: string | null;
+
   @Column({
     name: 'ambiente_sii',
     type: 'enum',

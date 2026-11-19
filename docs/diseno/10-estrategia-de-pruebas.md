@@ -156,3 +156,10 @@ Los tests de `dte-core` generan los certificados y CAF en memoria (RSA 2048 tard
 - Golden files de XML por tipo de documento.
 - Pruebas de contrato de la API REST propia (cuando exista) contra su OpenAPI.
 - Prueba de integración de la unión `dte-core` + `sii-gateway` (firmador real) una vez escrito el adaptador.
+
+## 5. Actualización WP9 (2026-11-19): API de emisión y set de pruebas
+
+- Los e2e ahora comprueban la base con un helper compartido (`test/helpers/db.ts`, `postgresDisponible()`, timeout de 1,5 s): sin Postgres los suites se **omiten en segundos** en lugar de fallar por timeout.
+- `test/emision.e2e-spec.ts`: empresa, PFX, CAF (RSA 512, `src/testing/caf-realista.ts`), emisión 33/39 con idempotencia (incluida concurrencia), folio no consumido ante error, XML válido contra XSD, PDF, envío DTE y de boletas (lotes de 50) y consulta de estado con el SII simulado (`src/testing/sii-simulado.ts`, inyectado por `SII_FETCH`).
+- `test/certificacion.e2e-spec.ts`: la herramienta del set en modo simulado (sin consumir folios) y real (idempotente).
+- Guía operativa: `docs/certificacion/GUIA-CERTIFICACION.md`.

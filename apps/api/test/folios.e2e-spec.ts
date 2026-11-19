@@ -1,4 +1,3 @@
-import { existsSync } from 'node:fs';
 import { Test } from '@nestjs/testing';
 import { DataSource } from 'typeorm';
 import { ConfigModule } from '../src/config/config.module.js';
@@ -12,14 +11,12 @@ import {
 } from '../src/folios/folios.errors.js';
 import { FoliosModule } from '../src/folios/folios.module.js';
 import { FoliosService } from '../src/folios/folios.service.js';
+import { postgresDisponible } from './helpers/db.js';
 
-// Mismo mecanismo que src/database/data-source.ts: .env.local y .env sin dependencias.
-for (const archivo of ['.env.local', '.env']) {
-  if (existsSync(archivo)) process.loadEnvFile(archivo);
-}
+const hayDb = await postgresDisponible();
 
 // Requiere Postgres (docker compose up -d postgres) con las migraciones aplicadas.
-describe.skipIf(!process.env.DATABASE_HOST)(
+describe.skipIf(!hayDb)(
   'FoliosService (e2e, con DB)',
   () => {
     let dataSource: DataSource;

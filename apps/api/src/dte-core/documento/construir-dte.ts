@@ -1,5 +1,5 @@
 import type { Caf } from '../caf/caf.js';
-import { folioEnRango } from '../caf/caf.js';
+import { cafVigente, folioEnRango } from '../caf/caf.js';
 import { firmarXml } from '../firma/firma.js';
 import { generarTed } from '../ted/ted.js';
 import {
@@ -24,6 +24,7 @@ import {
   type DocumentoDte,
   type EmisorDte,
   type ReceptorDte,
+  type TipoDte,
   type TotalesDte,
 } from './tipos.js';
 
@@ -32,7 +33,20 @@ export interface OpcionesConstruirDte {
   certificado: { certificadoPem: string; clavePrivadaPem: string };
   /** Momento de firma/timbraje (`TmstFirma` y `TSTED`). Por defecto, ahora. */
   fechaFirma?: Date;
+  /**
+   * Rechaza un CAF vencido a la fecha de emisión del documento (solo tipos con crédito fiscal,
+   * ver `TIPOS_CAF_CON_VENCIMIENTO`). Por defecto `true`.
+   */
+  validarVigenciaCaf?: boolean;
 }
+
+/**
+ * Tipos cuyo CAF vence (6 meses desde la autorización, Res. Ex. SII 58/2017): documentos con derecho
+ * a crédito fiscal (factura afecta y notas de crédito/débito). Boleta (39/41), factura exenta (34)
+ * y guía de despacho (52) no vencen. Regla tomada de `docs/01-opciones-arquitectura-y-pruebas.md`
+ * ("detalle de alcance: verificar").
+ */
+export const TIPOS_CAF_CON_VENCIMIENTO: readonly TipoDte[] = [33, 56, 61];
 
 export interface DteConstruido {
   /** `<DTE>` firmado, sin declaración XML (string JS, para inspección e inserción en sobres). */
@@ -97,7 +111,7 @@ function validarFecha(valor: string | undefined, ctx: string): void {
 // Validación de negocio
 // ---------------------------------------------------------------------------------------------
 
-function validarDocumento(doc: DocumentoDte, caf: Caf): void {
+function validarDocumento(doc: DocumentoDte, caf: Caf, validarVigenciaCaf: boolean): void {
   const { idDoc, emisor, receptor } = doc;
   const tipo = idDoc.tipoDte;
   if (!TIPOS_DTE.includes(tipo)) throw new ErrorValidacionDte(`Tipo de documento no soportado: ${String(tipo)}`);
@@ -117,6 +131,15 @@ function validarDocumento(doc: DocumentoDte, caf: Caf): void {
     throw new ErrorValidacionDte(
       `El folio ${idDoc.folio} está fuera del rango del CAF (${caf.folioDesde}-${caf.folioHasta})`,
     );
+  }
+  if (validarVigenciaCaf && TIPOS_CAF_CON_VENCIMIENTO.includes(tipo)) {
+    const emision = new Date(`${idDoc.fechaEmision}T12:00:00Z`);
+    if (!cafVigente(caf, emision)) {
+      throw new ErrorValidacionDte(
+        `El CAF del tipo ${tipo} venció el ${caf.fechaVencimiento.toISOString().slice(0, 10)} ` +
+          `(autorizado el ${caf.fechaAutorizacion}) y el documento se emite el ${idDoc.fechaEmision}; solicite un CAF nuevo`,
+      );
+    }
   }
   const rutEmisor = rutDe(emisor.rut, emisor.dv, 'Emisor');
   if (caf.rutEmisor.replace(/\./g, '').toUpperCase() !== rutEmisor) {
@@ -166,6 +189,10 @@ function validarDocumento(doc: DocumentoDte, caf: Caf): void {
   }
   if (boleta && (doc.impuestosAdicionales?.length ?? 0) > 0) {
     throw new ErrorValidacionDte('Las boletas no admiten impuestos adicionales');
+  }
+
+  if (doc.proveedorSoftware && boleta) {
+    rutDe(doc.proveedorSoftware.rut, doc.proveedorSoftware.dv, 'Proveedor de software');
   }
 
   // Campos exclusivos por tipo
@@ -277,6 +304,13 @@ function xmlReceptor(r: ReceptorDte, boleta: boolean): string {
   );
 }
 
+/** `RUTProvSW`: solo boletas; va entre `Receptor` y `Totales` en `EnvioBOLETA_v11.xsd`. */
+function xmlProveedorSw(doc: DocumentoDte): string {
+  const p = doc.proveedorSoftware;
+  if (!p || !esBoleta(doc.idDoc.tipoDte)) return '';
+  return tag('RUTProvSW', formatearRut(String(p.rut).replace(/\D/g, ''), p.dv));
+}
+
 function xmlTotales(doc: DocumentoDte, tot: TotalesDte): string {
   const boleta = esBoleta(doc.idDoc.tipoDte);
   let s = '<Totales>';
@@ -379,7 +413,7 @@ function xmlReferencias(doc: DocumentoDte): string {
  */
 export function construirDte(doc: DocumentoDte, opciones: OpcionesConstruirDte): DteConstruido {
   const { caf, certificado } = opciones;
-  validarDocumento(doc, caf);
+  validarDocumento(doc, caf, opciones.validarVigenciaCaf ?? true);
   const totales = calcularTotales(doc);
   const tipo = doc.idDoc.tipoDte;
   const boleta = esBoleta(tipo);
@@ -411,6 +445,7 @@ export function construirDte(doc: DocumentoDte, opciones: OpcionesConstruirDte):
     xmlIdDoc(doc) +
     xmlEmisor(doc.emisor, boleta) +
     xmlReceptor(doc.receptor, boleta) +
+    xmlProveedorSw(doc) +
     xmlTotales(doc, totales) +
     '</Encabezado>' +
     xmlDetalle(doc, totales) +

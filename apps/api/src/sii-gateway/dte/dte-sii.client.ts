@@ -24,6 +24,7 @@ import {
   leerTextoXml,
   parsearXml,
 } from '../comun/xml.js';
+import { clasificarEstadoDte, clasificarEstadoEnvioDte } from './estados.js';
 
 export interface DteSiiClientOpciones {
   ambiente: AmbienteSii;
@@ -49,6 +50,10 @@ export interface ResultadoEnvioDte {
 export interface RespuestaConsultaSii {
   estado: string;
   glosa: string;
+  /** Descripción del ESTADO según la documentación del SII. */
+  descripcionEstado: string;
+  /** true si el estado es terminal (no cambiará más). Los códigos de error de consulta no son finales. */
+  esFinal: boolean;
   /** XML SII:RESPUESTA ya des-escapado. */
   xmlRespuesta: string;
   /** Contenido de SII:RESP_HDR parseado (ESTADO, GLOSA, ERR_CODE, ...). */
@@ -263,6 +268,7 @@ export class DteSiiClient {
           { RutCompania: this.rutEmpresa, DvCompania: this.dvEmpresa, TrackId: track },
           token,
           'DTE: estado de envío',
+          clasificarEstadoEnvioDte,
         ),
     );
   }
@@ -292,6 +298,7 @@ export class DteSiiClient {
           },
           token,
           'DTE: estado de documento',
+          clasificarEstadoDte,
         ),
     );
   }
@@ -302,6 +309,7 @@ export class DteSiiClient {
     parametros: Record<string, string>,
     token: string,
     contexto: string,
+    clasificar: (estado: string) => { descripcionEstado: string; esFinal: boolean },
   ): Promise<RespuestaConsultaSii> {
     const campos = Object.entries({ ...parametros, Token: token })
       .map(([k, v]) => `<${k}>${escaparXml(v)}</${k}>`)
@@ -324,6 +332,7 @@ export class DteSiiClient {
     return {
       estado,
       glosa: buscarTexto(doc, 'GLOSA') ?? '',
+      ...clasificar(estado),
       xmlRespuesta: retorno,
       cabecera,
       cuerpo: buscarClave(doc, 'RESP_BODY'),

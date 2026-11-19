@@ -3,6 +3,7 @@
 export * from './caf/caf.js';
 export * from './ted/ted.js';
 export * from './firma/firma.js';
+export * from './firma/firmador-sii.js';
 export * from './xml/xml.util.js';
 export * from './xsd/xsd.js';
 export * from './certificado/certificado.js';

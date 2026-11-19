@@ -10,6 +10,7 @@ import { EnviosModule } from './envios/envios.module.js';
 import { FoliosModule } from './folios/folios.module.js';
 import { HealthModule } from './health/health.module.js';
 import { SeguridadModule } from './seguridad/seguridad.module.js';
+import { SiiModule } from './sii/sii.module.js';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { SeguridadModule } from './seguridad/seguridad.module.js';
     DocumentosModule,
     EnviosModule,
     SeguridadModule,
+    SiiModule,
   ],
   controllers: [AppController],
   providers: [AppService],
