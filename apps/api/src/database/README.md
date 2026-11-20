@@ -19,6 +19,7 @@ empresas 1──* envios
 | `documentos` | DTE emitido: folio, receptor, montos (`bigint`), `estado`, `track_id`, XML firmado, TED, `reparos` (jsonb), `clave_idempotencia`. Único `(empresa_id, tipo_dte, folio)` y único parcial `(empresa_id, clave_idempotencia)` cuando no es null. |
 | `envios` | Envío al SII (canal `dte`/`boleta`), Track ID, estado SII (REC, EPR, RPR, RCH…), respuesta jsonb, intentos. |
 | `envio_documentos` | N:M envío–documento con estado/glosa por documento. PK compuesta. |
+| `libros` | Libro electrónico generado y firmado (`tipo_operacion` VENTA/COMPRA/GUIA, `tipo_libro`, `tipo_envio`, `periodo` AAAA-MM, `folio_notificacion`, `nro_segmento`), `xml_libro`, `resumen` (jsonb), Track ID, estado y respuesta del SII. RLS forzada por `empresa_id`. Migración `1795400000000-Libros`. |
 
 ### Convenciones
 
@@ -72,7 +73,7 @@ Segunda barrera de aislamiento por empresa. La primera sigue siendo la aplicaci�
 El contexto viaja en dos variables **locales a la transacción** (`set_config(..., true)`; jamás `false`, para que no se filtren por el pool): `app.todas_empresas` (`on`/`off`) y `app.empresas` (RUT normalizados `76086428-5` separados por coma).
 
 - `empresas`: `app_rut_permitido(rut, dv)` (función SQL STABLE, SECURITY INVOKER) = `todas_empresas = 'on'` o `rut || '-' || upper(dv)` en la lista (mismo formato que `normalizarRut`).
-- `certificados`, `cafs`, `documentos`, `envios`: `empresa_id IN (SELECT id FROM empresas)`; la subconsulta ya está filtrada por la política de `empresas` y se evalúa una vez por consulta. `documentos` además exige que `caf_id` sea de un CAF visible (las FK se validan saltándose RLS).
+- `certificados`, `cafs`, `documentos`, `envios` y `libros` (migración `1795400000000-Libros`): `empresa_id IN (SELECT id FROM empresas)`; la subconsulta ya está filtrada por la política de `empresas` y se evalúa una vez por consulta. `documentos` además exige que `caf_id` sea de un CAF visible (las FK se validan saltándose RLS).
 - `envio_documentos`: su envío y su documento deben ser visibles.
 - Todas con `ENABLE` + `FORCE ROW LEVEL SECURITY`, `USING` y `WITH CHECK`. Sin contexto, 0 filas y los INSERT fallan (fail-closed).
 - `api_keys` **no** tiene RLS: se consulta antes de conocer al principal (es la tabla que lo determina) y solo guarda prefijo y hash SHA-256.

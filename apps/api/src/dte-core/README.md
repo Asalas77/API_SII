@@ -10,7 +10,8 @@ Núcleo criptográfico y XML para DTE y boletas electrónicas del SII. Dominio p
 | `ted/` | `generarTed` y `verificarTed`. |
 | `firma/` | `firmarXml` (por `ID`), `firmarDocumentoCompleto` (`URI=""`, semilla de autenticación), `verificarFirmaXml` y `crearFirmadorSii` (adaptador `{ firmarXml(xml, idReferencia?) }` para el gateway; sin id firma el documento completo). |
 | `xml/` | `escaparXml`, `aIso88591`, `desdeIso88591`, `formatearFechaSii`, `formatearTimestampSii`, RUT (`formatearRut`, `calcularDv`, `validarDv`, `validarRut`, `separarRut`). |
-| `xsd/` | `validarXsd(xml, 'DTE'|'EnvioDTE'|'EnvioBOLETA'|'RespSII'|'RespuestaEnvioDTE')` con `libxml2-wasm`; validadores cacheados. |
+| `xsd/` | `validarXsd(xml, 'DTE'|'EnvioDTE'|'EnvioBOLETA'|'RespSII'|'RespuestaEnvioDTE'|'EnvioRecibos'|'LibroCV'|'LibroGuia')` con `libxml2-wasm`; validadores cacheados. |
+| `libros/` | `construirLibroCompraVenta` y `construirLibroGuias`: libros electrónicos IECV y de guías de despacho (ver abajo). |
 | `certificado/` | `cargarPfx` (node-forge): PEM de certificado y clave (PKCS#8), CN, vigencia, RUT del SAN. |
 | `testing/` | Solo pruebas: `generarCertificadoPrueba`, `generarPfxPrueba`, `generarCafPrueba`. |
 
@@ -73,6 +74,30 @@ Folio fuera del rango del CAF, CAF de otro tipo o de otro emisor, DV de RUT inco
 ### Sobres
 
 `construirEnvioDte`/`construirEnvioBoleta` insertan cada DTE firmado textualmente (solo se quita la declaración XML), agrupan `SubTotDTE` por tipo y firman `SetDoc`. `rutReceptor` por defecto es `60803000-K` (SII); en intercambio se pasa el RUT del cliente. El tipo de cada DTE se lee del texto de `IdDoc/TipoDTE`.
+
+## Libros electrónicos (`libros/`)
+
+Dominio puro (sin Nest ni red). Formatos: `docs/referencias-sii/pdf/SII_Formato_IECV_Libros_Compra_Venta.pdf` (v2.2) y `SII_Formato_Libro_Guias_Despacho.pdf` (v1.0); XSD en `resources/sii/xsd/libros/` (ver su README). Ambos reciben datos tipados, calculan los resúmenes, arman el XML, **firman `EnvioLibro` por su `ID`** (`firmarXml`, RSA-SHA1, igual que el resto) y devuelven `{ xml, xmlIso, idEnvio, resumenPeriodo, resumenSegmento, ... }`. El llamador valida con `validarXsd(xmlIso, 'LibroCV' | 'LibroGuia')` (la API lo hace siempre antes de guardar).
+
+| Función | Raíz XML | Resumen |
+| --- | --- | --- |
+| `construirLibroCompraVenta({ caratula, detalle, resumenesAdicionales?, documentosPeriodo?, factorProporcionalidad?, certificado, fechaFirma?, idEnvio? })` | `LibroCompraVenta` | `TotalesPeriodo`/`TotalesSegmento` por tipo de documento (y tipo de impuesto). |
+| `construirLibroGuias({ caratula, detalle, guiasPeriodo?, certificado, ... })` | `LibroGuia` | Guías de venta, anuladas, modificadas y `TotTraslado` por tipo de operación (2 a 7). |
+
+### Reglas implementadas
+
+- **Carátula**: `TipoLibro` MENSUAL/ESPECIAL/RECTIFICA; ESPECIAL exige `FolioNotificacion` (en el set: 1 ventas, 2 compras); RECTIFICA exige `CodAutRec`; PARCIAL exige `NroSegmento`. El libro de guías solo admite ESPECIAL y siempre `FolioNotificacion`.
+- **Tipos de envío**: TOTAL = resumen de período + detalle; PARCIAL = resumen de segmento + detalle; FINAL = solo resumen de período (se calcula con `detalle`, que se entiende como todo el período, y no se emite); AJUSTE = resumen de segmento **con signo** (`operacion: 2` elimina y resta) + resumen de período calculado desde `documentosPeriodo` / `guiasPeriodo` (obligatorio) + detalle.
+- **Totales por tipo**: `TotDoc` cuenta todos los documentos incluidos los anulados; los montos de **folios anulados** (`anulado: true`, solo tipo y folio en el detalle) no se suman; contadores opcionales (`TotOp*`, `TotAnulado`) se omiten en cero. Las **notas de crédito se informan en positivo en su propia fila** (así lo pide el formato); `saldo` (informativo) las resta (60, 61, 112).
+- **Montos del detalle (compras y ventas)**: `montoTotal` = exento + neto + IVA recuperable + IVA uso común + IVA no recuperable (por código 1, 2, 3, 4, 9) + otros impuestos con crédito + impuestos sin derecho a crédito + depósito de envases − IVA retenido (total y parcial) − crédito empresa constructora. Si se informa y no cuadra se rechaza; si se omite se calcula. `montoIva` por defecto = `round(neto * tasa)` con tasa 19 (informe 0 si el IVA es todo de uso común o no recuperable). Activo fijo (`montoNetoActivoFijo`, `ivaActivoFijo`) e IVA fuera de plazo/propio/terceros son informativos (ya están incluidos en neto e IVA).
+- **Compras**: `factorProporcionalidad` (0,001 a 99,999) agrega `FctProp` (3 decimales) y `TotCredIVAUsoComun = round(factor * IVA uso común)` a cada tipo con IVA de uso común.
+- **Ventas**: boletas y demás tipos "solo resumen" (35, 38, 39, 41, 105, 500, 501, 919, 920, 922, 924) no van en el detalle; se pasan en `resumenesAdicionales` y salen solo en el resumen de período.
+- **Guías**: `TpoOper` 1 venta (exige RUT del receptor; debería informar la factura asociada), 2 a 7 traslados no venta; `Anulado` 1 folio anulado antes del envío (sin más datos), 2 anulada después, 3 recibida parcialmente (`montoModificado`). `TotGuiaVenta`/`TotMntGuiaVta` excluyen anuladas.
+- Texto: saneado a Latin-1, truncado (razón social 50) y escapado; salida ISO-8859-1.
+
+### No cubierto (por ahora)
+
+Libros contables (CAL/COCERTIF), liquidaciones y liquidaciones-factura (`Liquidaciones`, montos negativos), `Ley18211` como monto (solo `TpoImp` 2), tabacos, pasajes (`PsjNac`/`PsjInt`), impuesto a vehículos, `MntNoFact`/`MntPeriodo`, receptor extranjero (`Extranjero`), factor de impuesto adicional (`FctImpAdic`/`TotCredImp`) y tipos de cambio (500/501). `LibroGuia` se valida con una copia del XSD que importa `xmldsig` (ver `resources/sii/xsd/libros/README.md`). Los estados de proceso propios de libros en el SII no figuran en el PDF de QueryEstUp; se reutiliza la clasificación de estados de envío.
 
 ### Pendientes
 

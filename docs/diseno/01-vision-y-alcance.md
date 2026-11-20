@@ -83,7 +83,7 @@ flowchart LR
 
 ### 4.3 Fuera de alcance explícito
 
-- Libros electrónicos (IECV/libro de compras y ventas) y contabilidad. Se mencionan en el glosario porque aparecen en la certificación, pero no hay diseño.
+- Libros contables (CAL/COCERTIF) y contabilidad. Los libros de compras, ventas y guías (IECV) **sí están implementados** (`apps/api/src/libros`, `src/dte-core/libros`).
 - Ser proveedor de certificados digitales o de CAF: los entrega el SII y una entidad acreditada.
 - Reemplazar al ERP: la API emite y consulta; no gestiona inventario ni cobranza.
 

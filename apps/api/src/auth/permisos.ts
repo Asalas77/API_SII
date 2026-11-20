@@ -10,6 +10,8 @@ export const PERMISOS = {
   DOCUMENTOS_LEER: 'documentos.leer',
   ENVIOS_CREAR: 'envios.crear',
   ENVIOS_LEER: 'envios.leer',
+  LIBROS_GENERAR: 'libros.generar',
+  LIBROS_LEER: 'libros.leer',
   API_KEYS_GESTIONAR: 'api_keys.gestionar',
 } as const;
 

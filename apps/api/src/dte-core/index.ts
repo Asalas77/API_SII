@@ -12,3 +12,6 @@ export * from './documento/tipos.js';
 export * from './documento/totales.js';
 export * from './documento/construir-dte.js';
 export * from './envio/envio.js';
+export * from './libros/comun.js';
+export * from './libros/libro-cv.js';
+export * from './libros/libro-guias.js';

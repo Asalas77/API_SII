@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Test } from '@nestjs/testing';
@@ -6,13 +6,14 @@ import type { DataSource } from 'typeorm';
 import { AppModule } from '../src/app.module.js';
 import { CertificadosService } from '../src/certificados/certificados.service.js';
 import { Certificado } from '../src/certificados/entities/certificado.entity.js';
-import { parsearSet } from '../src/certificacion/index.js';
+import { parsearComprasSet, parsearSet } from '../src/certificacion/index.js';
 import { ejecutarSet, type ServiciosCertificacion } from '../src/certificacion/ejecutar-set.js';
 import { DocumentosService } from '../src/documentos/documentos.service.js';
 import { Documento } from '../src/documentos/entities/documento.entity.js';
 import { comoSistema } from '../src/database/contexto-empresa.js';
 import { EjecutorEmpresa } from '../src/database/ejecutor-empresa.js';
-import { calcularDv } from '../src/dte-core/index.js';
+import { fechaSantiago } from '../src/comun/fechas.js';
+import { calcularDv, desdeIso88591, validarXsd } from '../src/dte-core/index.js';
 import { generarPfxPrueba } from '../src/dte-core/testing/testing.js';
 import { Empresa } from '../src/empresas/entities/empresa.entity.js';
 import { EmpresasService } from '../src/empresas/empresas.service.js';
@@ -21,6 +22,8 @@ import { Envio } from '../src/envios/entities/envio.entity.js';
 import { EnviosService } from '../src/envios/envios.service.js';
 import { Caf } from '../src/folios/entities/caf.entity.js';
 import { FoliosService } from '../src/folios/folios.service.js';
+import { Libro } from '../src/libros/entities/libro.entity.js';
+import { LibrosService } from '../src/libros/libros.service.js';
 import { SII_FETCH } from '../src/sii/tokens.js';
 import { SiiClienteFactory } from '../src/sii/sii-cliente.factory.js';
 import { generarCafRealista } from '../src/testing/caf-realista.js';
@@ -69,6 +72,7 @@ describe.skipIf(!hayDb)('Herramienta del set de pruebas (e2e, con DB)', () => {
       documentos: m.get(DocumentosService),
       envios: m.get(EnviosService),
       sii: m.get(SiiClienteFactory),
+      libros: m.get(LibrosService),
     };
     carpeta = mkdtempSync(join(tmpdir(), 'set-'));
     // Los servicios exigen contexto de empresa (RLS): el setup corre como sistema.
@@ -104,6 +108,7 @@ describe.skipIf(!hayDb)('Herramienta del set de pruebas (e2e, con DB)', () => {
     const docs = await ds.getRepository(Documento).find({ where: { empresaId } });
     const envios = await ds.getRepository(Envio).find({ where: { empresaId } });
     for (const e of envios) await ds.getRepository(EnvioDocumento).delete({ envioId: e.id });
+    await ds.getRepository(Libro).delete({ empresaId });
     await ds.getRepository(Envio).delete({ empresaId });
     if (docs.length) await ds.getRepository(Documento).delete(docs.map((d) => d.id));
     await ds.getRepository(Caf).delete({ empresaId });
@@ -151,5 +156,60 @@ describe.skipIf(!hayDb)('Herramienta del set de pruebas (e2e, con DB)', () => {
     expect(otra.envios).toHaveLength(0);
     expect(otra.advertencias.join()).toContain('ya habían sido enviados');
     expect(await ds.getRepository(Documento).count({ where: { empresaId } })).toBe(2);
+  });
+
+  const hoy = fechaSantiago();
+  const COMPRAS = JSON.stringify({
+    factorProporcionalidad: 0.6,
+    documentos: [
+      { tipoDoc: 30, folio: 234, fechaDoc: hoy, rutProveedor: '96792430-K', razonSocial: 'Proveedor SA', montoNeto: 12000 },
+      { tipoDoc: 33, folio: 32, fechaDoc: hoy, rutProveedor: '96792430-K', montoNeto: 9000, montoIva: 0, ivaUsoComun: 1710 },
+      { tipoDoc: 60, folio: 451, fechaDoc: hoy, rutProveedor: '96792430-K', montoNeto: 1000, tipoDocRef: 30, folioDocRef: 234 },
+    ],
+  });
+
+  it('modo simulado con libros: genera Libro de Ventas (folio 1) y de Compras (folio 2) válidos y no guarda nada', async () => {
+    const salida = mkdtempSync(join(tmpdir(), 'set-libros-'));
+    try {
+      const r = await ejecutarSet(svc, parsearSet(SET), {
+        rutEmpresa: rut.texto,
+        simular: true,
+        carpetaSalida: salida,
+        libros: { compras: parsearComprasSet(COMPRAS), guias: true },
+      });
+      expect(r.libros.map((l) => [l.tipo, l.documentos])).toEqual([
+        ['VENTA', 2],
+        ['COMPRA', 3],
+      ]);
+      // El set no trae guías: se avisa y no se genera ese libro.
+      expect(r.advertencias.join()).toContain('Libro de guías omitido');
+      const ventas = desdeIso88591(readFileSync(join(salida, 'LibroVentas.xml')));
+      const compras = desdeIso88591(readFileSync(join(salida, 'LibroCompras.xml')));
+      expect(validarXsd(ventas, 'LibroCV').valido).toBe(true);
+      expect(validarXsd(compras, 'LibroCV').valido).toBe(true);
+      expect(ventas).toContain('<TipoOperacion>VENTA</TipoOperacion><TipoLibro>ESPECIAL</TipoLibro><TipoEnvio>TOTAL</TipoEnvio><FolioNotificacion>1</FolioNotificacion>');
+      expect(compras).toContain('<TipoOperacion>COMPRA</TipoOperacion><TipoLibro>ESPECIAL</TipoLibro><TipoEnvio>TOTAL</TipoEnvio><FolioNotificacion>2</FolioNotificacion>');
+      expect(compras).toContain('<FctProp>0.600</FctProp>');
+      expect(await ds.getRepository(Libro).count({ where: { empresaId } })).toBe(0);
+    } finally {
+      rmSync(salida, { recursive: true, force: true });
+    }
+  });
+
+  it('modo real con libros: guarda los libros y, con enviar, los sube al SII', async () => {
+    const subidasAntes = sii.llamadas.filter((l) => l.url.endsWith('/DTEUpload')).length;
+    const r = await ejecutarSet(svc, parsearSet(SET), {
+      rutEmpresa: rut.texto,
+      simular: false,
+      libros: { compras: parsearComprasSet(COMPRAS), enviar: true },
+    });
+    expect(r.libros.map((l) => l.tipo)).toEqual(['VENTA', 'COMPRA']);
+    for (const l of r.libros) expect(l.trackId).toMatch(/^[0-9]+$/);
+    expect(sii.llamadas.filter((l) => l.url.endsWith('/DTEUpload')).length).toBe(subidasAntes + 2);
+    const guardados = await ds.getRepository(Libro).find({ where: { empresaId }, order: { tipoOperacion: 'ASC' } });
+    expect(guardados.map((l) => [l.tipoOperacion, l.folioNotificacion, l.estado])).toEqual([
+      ['COMPRA', 2, 'REC'],
+      ['VENTA', 1, 'REC'],
+    ]);
   });
 });

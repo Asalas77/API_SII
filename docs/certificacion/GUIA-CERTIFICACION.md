@@ -83,13 +83,52 @@ curl -H "$K" -X DELETE $B/empresas/76086428-5/logo               # quitar
 
 `GET $B/empresas/76086428-5` informa `unidadSii`, `urlVerificacion` y `tieneLogo`.
 
-## 7. Qué sigue
+## 7. Libros electrónicos del set (IEV, IEC y guías)
 
-1. **Libros IEV/IECV** del set (ventas y compras): pendiente de implementar.
-2. **Simulación**: el SII pide emitir documentos de un "set de simulación" con datos propios del contribuyente (mismo flujo, vía `POST /documentos` y `POST /envios`).
-3. **Intercambio entre contribuyentes** (`src/intercambio`: recepción, acuse/recibos, respuestas) y **muestras impresas** aprobadas.
-4. **Declaración de cumplimiento** de requisitos técnicos y paso a producción: cambiar `ambienteSii` a `produccion` (exige certificado activo), cargar CAF de producción y certificado definitivo.
+El SII exige, además del sobre de documentos, el **Libro de Ventas** (con los documentos del set reportado: facturas, notas de crédito y de débito) y el **Libro de Compras** (con los documentos recibidos que entrega el set de compras). Formato: `docs/referencias-sii/pdf/SII_Formato_IECV_Libros_Compra_Venta.pdf`; instrucciones: `SII_Instrucciones_Set_de_Pruebas.pdf`, secciones III y IV. En ambos la carátula es: **TipoLibro ESPECIAL, TipoEnvio TOTAL**, mismo **período tributario** que los documentos del set, y **FolioNotificacion 1 (ventas) y 2 (compras)**. Se firman con el certificado y se suben por el mismo upload de DTE (`/cgi_dte/UPL/DTEUpload`); el estado se consulta con `QueryEstUp` como un envío. Permisos de la API key: `libros.generar` y `libros.leer`.
 
-## 8. Antes de producción
+```bash
+P=2026-11                      # período de los documentos del set
+
+# Libro de Ventas desde los documentos emitidos en el período (33, 34, 56, 61; ESPECIAL no incluye boletas)
+curl -H "$K" -X POST $B/empresas/76086428-5/libros/ventas -H 'content-type: application/json'   -d "{\"periodo\":\"$P\",\"tipoLibro\":\"ESPECIAL\",\"tipoEnvio\":\"TOTAL\",\"folioNotificacion\":1}"
+
+# Libro de Compras: no hay recepción de DTE de proveedores en la base; se envían los documentos del set de compras
+curl -H "$K" -X POST $B/empresas/76086428-5/libros/compras -H 'content-type: application/json' -d '{
+  "periodo":"2026-11","tipoLibro":"ESPECIAL","tipoEnvio":"TOTAL","folioNotificacion":2,"factorProporcionalidad":0.6,
+  "documentos":[
+    {"tipoDoc":30,"folio":234,"fechaDoc":"2026-11-05","rutProveedor":"96792430-K","razonSocial":"Proveedor SA","montoNeto":12000},
+    {"tipoDoc":33,"folio":32,"fechaDoc":"2026-11-06","rutProveedor":"96792430-K","montoNeto":9000,"montoIva":0,"ivaUsoComun":1710},
+    {"tipoDoc":33,"folio":33,"fechaDoc":"2026-11-06","rutProveedor":"96792430-K","montoNeto":5000,"montoIva":0,"ivaNoRecuperable":[{"codigo":1,"monto":950}]},
+    {"tipoDoc":34,"folio":9,"fechaDoc":"2026-11-07","rutProveedor":"96792430-K","montoExento":6000},
+    {"tipoDoc":60,"folio":451,"fechaDoc":"2026-11-08","rutProveedor":"96792430-K","montoNeto":1000,"tipoDocRef":30,"folioDocRef":234}]}'
+
+# Revisar, descargar, enviar y consultar (el id sale de la respuesta de cada POST)
+curl -H "$K" $B/empresas/76086428-5/libros
+curl -H "$K" $B/libros/<id>/xml -o LibroVentas.xml
+curl -H "$K" -X POST $B/libros/<id>/enviar                 # sube al SII; devuelve trackId
+curl -H "$K" -X POST $B/libros/<id>/consultar              # QueryEstUp; actualiza estado
+```
+
+También puede enviar al generar con `"enviar": true`. Un libro ya enviado no se reenvía (409); si el envío falló (`estado: ERR`) se puede repetir con `/enviar`. En compras, `montoTotal` se calcula (neto + exento + IVA + uso común + no recuperable + otros impuestos); si lo informa y no cuadra, se rechaza (422). `montoIva` es el IVA **recuperable**: si todo el IVA es de uso común o no recuperable, informe `montoIva: 0`. Los tipos 30 y 33, etc. usan la codificación del formato (sección 4.2: 30 factura, 33 factura electrónica, 34 exenta electrónica, 60/61 notas de crédito, 55/56 notas de débito).
+
+**Libro de guías de despacho** (no forma parte del set; solo si el SII lo solicita por notificación): `POST $B/empresas/76086428-5/libros/guias` con `{"periodo":"2026-11","folioNotificacion":<folio de la notificación>}` arma el libro con las guías (52) del período (`IndTraslado` 1 = venta, 5 = traslado interno, etc.).
+
+**Desde la herramienta del set** (usa los documentos del set recién emitidos y el JSON de compras de `apps/api/src/certificacion/README.md`):
+
+```bash
+npm run certificacion:set -- --empresa 76086428-5 --archivo set.txt --simular --libros --compras compras.json --salida ./salida-set
+npm run certificacion:set -- --empresa 76086428-5 --archivo set.txt --libros --compras compras.json --enviar-libros
+```
+
+El modo simulado escribe `LibroVentas.xml` y `LibroCompras.xml` (validados contra el XSD) sin guardar nada. El modo real los guarda (consulte `GET $B/empresas/.../libros`) y con `--enviar-libros` los sube; envíelos después de que el SII haya recibido el sobre del set. Revise los datos del set de compras antes de enviar: el formato textual de ese set no está publicado y por eso se toma de un JSON.
+
+## 8. Qué sigue
+
+1. **Simulación**: el SII pide emitir documentos de un "set de simulación" con datos propios del contribuyente (mismo flujo, vía `POST /documentos` y `POST /envios`).
+2. **Intercambio entre contribuyentes** (`src/intercambio`: recepción, acuse/recibos, respuestas) y **muestras impresas** aprobadas.
+3. **Declaración de cumplimiento** de requisitos técnicos y paso a producción: cambiar `ambienteSii` a `produccion` (exige certificado activo), cargar CAF de producción y certificado definitivo.
+
+## 9. Antes de producción
 
 Claves API propias por integración (no usar la clave de administración en producción), clave maestra propia y rotación, almacenamiento de XML en object storage, respaldos y monitoreo (ver `docs/diseno/08-seguridad.md` y `11-operacion-y-despliegue.md`). Verifique contra maullin/apicert los formatos de respuesta reales: los clientes se probaron solo con respuestas simuladas.

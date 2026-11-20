@@ -45,7 +45,7 @@ Términos del SII de Chile y del proyecto. Cuando un término tiene una pieza de
 | **Reparo** | Observación del SII sobre un documento aceptado; debe corregirse en documentos posteriores o con una nota |
 | **Rechazado** | Documento no aceptado; el folio queda consumido y hay que corregir y volver a emitir con otro folio |
 | **RCOF / RVD** | Reporte de Consumo de Folios, hoy Resumen de Ventas Diarias de boletas. Dejó de ser obligatorio el 1 de agosto de 2022 (Res. Ex. 53/2022; fuente secundaria, verificar). No está en el alcance |
-| **IECV / libros** | Información Electrónica de Compras y Ventas (libros de compra y venta). Aparece en el proceso de certificación; no está en el alcance del proyecto |
+| **IECV / libros** | Información Electrónica de Compras y Ventas (libros de compra y venta). Implementado: `POST /v1/empresas/{rut}/libros/ventas|compras|guias`, firma, validación XSD (`LibroCV_v10`, `LibroGuia_v10`) y envío por DTEUpload |
 | **Registro de Compras y Ventas (RCV)** | Registro del SII que se alimenta de los DTE recibidos y emitidos |
 | **REGISTRORECLAMODTE** | Web service del SII (`ws1`/`ws2.sii.cl`) para que el receptor registre aceptación o reclamo (acciones `ACD, RCD, ERM, RFP, RFT`) dentro de 8 días. Planificado |
 | **Correo de intercambio** | Casilla registrada en el SII para recibir DTE de proveedores y respuestas. Columna `empresas.correo_intercambio` |

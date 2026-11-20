@@ -38,7 +38,8 @@ const xml = (cuerpo: string, status = 200, tipo = 'text/xml') =>
 export function crearSiiSimulado(): SiiSimulado {
   const sim: SiiSimulado = {
     llamadas: [],
-    siguienteTrackId: 1000,
+    // Base aleatoria: varios archivos e2e corren en paralelo sobre la misma BD y buscan envíos por track id.
+    siguienteTrackId: 1000 + Math.floor(Math.random() * 1_000_000_000),
     estadoBoleta: { estado: 'EPR', estadistica: [], detalle_rep_rech: [] },
     estadoDte: {
       estado: 'EPR',

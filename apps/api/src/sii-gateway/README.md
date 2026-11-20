@@ -19,6 +19,8 @@ Clientes HTTP hacia el SII de Chile. Son clases puras (sin decoradores Nest); el
 
 Hosts (`ambientes.ts`): DTE `maullin.sii.cl` (certificación) / `palena.sii.cl` (producción); boleta `apicert.sii.cl` / `api.sii.cl`. El envío de boletas puede ir a los hosts temporales `pangal.sii.cl` / `rahue.sii.cl` con `usarHostEnvioAlternativo: true`.
 
+Los libros electrónicos (IECV y guías) se suben por el mismo `enviarDte` (`/cgi_dte/UPL/DTEUpload`) y su estado se consulta con `consultarEstadoEnvio` (`getEstUp`); ver `src/libros`.
+
 Límite del SII: máximo 500 boletas por envío (recomendado 50). No se valida aquí; es responsabilidad del dominio. Tras un envío conviene esperar ~10 minutos antes de consultar estados.
 
 ## Inyección del firmador

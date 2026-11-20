@@ -5,7 +5,7 @@ import { XmlDocument, XsdValidator } from 'libxml2-wasm';
 import type { ErrorDetail } from 'libxml2-wasm';
 import { xmlRegisterFsInputProviders } from 'libxml2-wasm/lib/nodejs.mjs';
 
-export type EsquemaSii = 'DTE' | 'EnvioDTE' | 'EnvioBOLETA' | 'RespSII' | 'RespuestaEnvioDTE' | 'EnvioRecibos';
+export type EsquemaSii = 'DTE' | 'EnvioDTE' | 'EnvioBOLETA' | 'RespSII' | 'RespuestaEnvioDTE' | 'EnvioRecibos' | 'LibroCV' | 'LibroGuia';
 
 export interface ResultadoXsd {
   valido: boolean;
@@ -20,6 +20,10 @@ const ARCHIVOS: Record<EsquemaSii, string> = {
   RespuestaEnvioDTE: 'RespuestaEnvioDTE_v10.xsd',
   // Ley 19.983: carpeta propia porque trae una versión antigua de SiiTypes_v10.xsd.
   EnvioRecibos: 'recibos/EnvioRecibos_v10.xsd',
+  // Libros IECV y de guías: carpeta propia (traen su copia de xmldsignature y los tipos LCE). LibroGuia usa la
+  // copia con import de xmldsig (ver resources/sii/xsd/libros/README.md).
+  LibroCV: 'libros/LibroCV_v10.xsd',
+  LibroGuia: 'libros/LibroGuia_v10_ds.xsd',
 };
 
 let directorioXsd: string | undefined;

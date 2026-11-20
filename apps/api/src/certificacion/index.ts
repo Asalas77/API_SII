@@ -14,3 +14,4 @@ export function parsearSet(contenido: string): SetPruebas {
     ? parsearSetJson(contenido)
     : parsearSetTexto(contenido);
 }
+export * from './libros-set.js';

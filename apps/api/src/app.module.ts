@@ -10,6 +10,7 @@ import { EmpresasModule } from './empresas/empresas.module.js';
 import { EnviosModule } from './envios/envios.module.js';
 import { FoliosModule } from './folios/folios.module.js';
 import { HealthModule } from './health/health.module.js';
+import { LibrosModule } from './libros/libros.module.js';
 import { SeguridadModule } from './seguridad/seguridad.module.js';
 import { SiiModule } from './sii/sii.module.js';
 
@@ -24,6 +25,7 @@ import { SiiModule } from './sii/sii.module.js';
     FoliosModule,
     DocumentosModule,
     EnviosModule,
+    LibrosModule,
     SeguridadModule,
     SiiModule,
   ],

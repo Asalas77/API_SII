@@ -24,8 +24,22 @@ No hay una especificación publicada del archivo; el parser (`parser-texto.ts`) 
 
 Ver el comentario de `parser-json.ts`. Campos por caso: `id`, `tipoDte`, `items[]` (`nombre`, `cantidad`, `precioUnitario`, `descuentoPorcentaje`, `descuentoMonto`, `unidad`, `exento`), `descuentoGlobalPorcentaje`, `referencias[]` (`caso` o `tipoDocRef`+`folioRef`, `codRef`, `razonRef`), `indTraslado`.
 
+## Libros del set (IEV e IEC)
+
+Las instrucciones del SII (secciones III y IV) piden un **Libro de Ventas** con los documentos del set (facturas, notas de crédito y débito) y un **Libro de Compras** con los documentos recibidos del set de compras: carátula `TipoLibro ESPECIAL`, `TipoEnvio TOTAL`, mismo período, `FolioNotificacion` 1 (ventas) y 2 (compras).
+
+```
+npm run certificacion:set -- --empresa 76086428-5 --archivo set.txt --simular --libros --compras compras.json --salida ./salida-set
+npm run certificacion:set -- --empresa 76086428-5 --archivo set.txt --libros --compras compras.json --enviar-libros
+```
+
+- `--libros`: Libro de Ventas con los documentos del set recién emitidos (33, 34, 56, 61; sin boletas). `--compras <json>`: Libro de Compras con los documentos recibidos del archivo (`--compras` sin `--libros` genera solo el de compras). `--guias`: Libro de Guías si el set emitió guías (52). `--periodo AAAA-MM` (por defecto el mes de `--fecha`/hoy). `--enviar-libros`: en modo real, los sube al SII.
+- **Simulado**: escribe `LibroVentas.xml`, `LibroCompras.xml` (y `LibroGuias.xml`) validados contra el XSD, sin guardar nada. **Real**: guarda los libros en la tabla `libros` (consúltelos con `GET /v1/empresas/:rut/libros`); repetir el comando genera libros nuevos.
+- **JSON de compras** (`parsearComprasSet`): `{ "factorProporcionalidad": 0.6, "documentos": [ { "tipoDoc": 33, "folio": 32, "fechaDoc": "2026-11-06", "rutProveedor": "96792430-K", "razonSocial": "Proveedor SA", "montoNeto": 9000, "montoIva": 0, "ivaUsoComun": 1710 }, ... ] }`. Por documento: `montoExento`, `montoNeto`, `montoIva` (IVA recuperable; por defecto neto x 19 %), `ivaUsoComun`, `ivaNoRecuperable: [{ codigo, monto }]`, `montoNetoActivoFijo`/`ivaActivoFijo`, `otrosImpuestos: [{ codigo, tasa, monto }]`, `impuestoSinCredito`, `tipoDocRef`/`folioDocRef`, `montoTotal` (opcional; se calcula). Ver `src/dte-core/README.md`.
+
 ## Pendientes
 
 - Verificar contra el set real el formato de texto y el valor de `FolioRef` de la referencia `SET`.
 - Notas de corrección de texto sin ítems generan una línea en monto cero (por confirmar con el SII).
-- Libros IEV/IECV y set de compras (no implementados).
+- El formato textual del set de compras del SII no se conoce con certeza: los documentos recibidos se toman de un JSON (ver abajo). Verificar contra el set real.
+- El libro de guías no forma parte de las instrucciones del set; `--guias` es opcional y usa el folio de notificación 3 (supuesto): para otro folio use `POST /v1/empresas/:rut/libros/guias`.

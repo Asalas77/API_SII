@@ -7,9 +7,10 @@ import { EjecutorEmpresa } from '../database/ejecutor-empresa.js';
 import { DocumentosService } from '../documentos/documentos.service.js';
 import { EmpresasService } from '../empresas/empresas.service.js';
 import { EnviosService } from '../envios/envios.service.js';
+import { LibrosService } from '../libros/libros.service.js';
 import { SiiClienteFactory } from '../sii/sii-cliente.factory.js';
 import { ejecutarSet } from './ejecutar-set.js';
-import { parsearSet } from './index.js';
+import { parsearComprasSet, parsearSet } from './index.js';
 
 const AYUDA = `Uso: npm run certificacion:set -- --empresa <rut> --archivo <set.txt|set.json> [opciones]
 
@@ -19,6 +20,13 @@ const AYUDA = `Uso: npm run certificacion:set -- --empresa <rut> --archivo <set.
   --salida    Carpeta de salida del modo simulado (por defecto ./salida-set)
   --fecha     Fecha de emisión yyyy-mm-dd (por defecto hoy, America/Santiago)
   --clave     Prefijo de las claves de idempotencia (por defecto set-<número de atención>)
+
+Libros del set (IEV/IEC, ver docs/certificacion/GUIA-CERTIFICACION.md):
+  --libros    Genera el Libro de Ventas (ESPECIAL, folio de notificación 1) con los documentos del set
+  --compras   JSON con los documentos recibidos del set de compras: genera el Libro de Compras (folio 2)
+  --guias     Genera además el Libro de Guías de Despacho (folio 3) si el set trae guías (52)
+  --enviar-libros  Modo real: sube los libros al SII (sin esto solo se guardan)
+  --periodo   Período tributario AAAA-MM de los libros (por defecto el mes de --fecha / hoy)
 `;
 
 async function main(): Promise<number> {
@@ -30,6 +38,11 @@ async function main(): Promise<number> {
       salida: { type: 'string' },
       fecha: { type: 'string' },
       clave: { type: 'string' },
+      libros: { type: 'boolean', default: false },
+      compras: { type: 'string' },
+      guias: { type: 'boolean', default: false },
+      'enviar-libros': { type: 'boolean', default: false },
+      periodo: { type: 'string' },
       ayuda: { type: 'boolean', default: false },
     },
   });
@@ -55,6 +68,7 @@ async function main(): Promise<number> {
         documentos: app.get(DocumentosService),
         envios: app.get(EnviosService),
         sii: app.get(SiiClienteFactory),
+        libros: app.get(LibrosService),
       },
       set,
       {
@@ -63,10 +77,26 @@ async function main(): Promise<number> {
         carpetaSalida: values.salida,
         fecha: values.fecha,
         prefijoClave: values.clave,
+        ...(values.libros || values.compras || values.guias
+          ? {
+              libros: {
+                ventas: values.libros || !values.compras,
+                ...(values.compras
+                  ? { compras: parsearComprasSet(await readFile(values.compras, 'utf8')) }
+                  : {}),
+                guias: values.guias,
+                enviar: values['enviar-libros'],
+                periodo: values.periodo,
+              },
+            }
+          : {}),
         log: (m) => console.log(m),
       },
     );
     for (const a of r.advertencias) console.warn(`  ! ${a}`);
+    for (const l of r.libros) {
+      console.log(`Libro ${l.tipo} ${l.periodo}: ${l.documentos} documentos${l.id ? ` (id ${l.id}${l.trackId ? `, TRACK ID ${l.trackId}` : ''})` : ''}`);
+    }
     if (r.simulado) {
       console.log(`Archivos generados (${r.archivos.length}):`);
       for (const f of r.archivos) console.log(`  ${f}`);

@@ -6,14 +6,17 @@ import { EjecutorEmpresa } from '../database/ejecutor-empresa.js';
 import { DocumentosService } from '../documentos/documentos.service.js';
 import type { Documento } from '../documentos/entities/documento.entity.js';
 import { aIso88591, validarXsd } from '../dte-core/index.js';
+import type { Empresa } from '../empresas/entities/empresa.entity.js';
 import { EmpresasService } from '../empresas/empresas.service.js';
 import { EnviosService } from '../envios/envios.service.js';
+import type { LibroArmado, LibrosService } from '../libros/libros.service.js';
 import { SiiClienteFactory } from '../sii/sii-cliente.factory.js';
 import {
   type CasoEmitido,
   casoADocumento,
   receptoresDePrueba,
 } from './generador.js';
+import type { ComprasSet } from './libros-set.js';
 import { ErrorSetPruebas, type SetPruebas } from './tipos.js';
 
 export interface ServiciosCertificacion {
@@ -23,6 +26,28 @@ export interface ServiciosCertificacion {
   documentos: DocumentosService;
   envios: EnviosService;
   sii: SiiClienteFactory;
+  /** Requerido solo si se piden libros (`OpcionesEjecutarSet.libros`). */
+  libros?: LibrosService;
+}
+
+/**
+ * Libros del set (instrucciones del SII, secciones III y IV): Libro de Ventas (ESPECIAL, TOTAL, folio de
+ * notificación 1) con los documentos emitidos del set, y Libro de Compras (ESPECIAL, TOTAL, folio 2) con los
+ * documentos recibidos que entrega el SII (JSON). El libro de guías no forma parte del set; se genera solo
+ * si se pide y hay guías (tipo 52).
+ */
+export interface OpcionesLibrosSet {
+  /** Libro de ventas con las facturas y notas emitidas (por defecto true). */
+  ventas?: boolean;
+  compras?: ComprasSet;
+  guias?: boolean;
+  /** Modo real: además de guardar los libros, los sube al SII. */
+  enviar?: boolean;
+  /** `AAAA-MM`; por defecto el mes de la fecha de emisión. */
+  periodo?: string;
+  folioVentas?: number;
+  folioCompras?: number;
+  folioGuias?: number;
 }
 
 export interface OpcionesEjecutarSet {
@@ -38,6 +63,8 @@ export interface OpcionesEjecutarSet {
   fecha?: string;
   /** Prefijo de las claves de idempotencia del modo real (por defecto `set-<atención>`). */
   prefijoClave?: string;
+  /** Si se indica, genera (y en modo real guarda/envía) los libros del set. */
+  libros?: OpcionesLibrosSet;
   log?: (mensaje: string) => void;
 }
 
@@ -56,6 +83,14 @@ export interface ResultadoSet {
     documentos: number;
   }>;
   archivos: string[];
+  /** Libros generados (en modo simulado solo se escriben los archivos; no se guardan). */
+  libros: Array<{
+    tipo: 'VENTA' | 'COMPRA' | 'GUIA';
+    periodo: string;
+    documentos: number;
+    id?: string;
+    trackId?: string | null;
+  }>;
   advertencias: string[];
 }
 
@@ -90,6 +125,7 @@ async function ejecutarSetEnContexto(
     documentos: [],
     envios: [],
     archivos: [],
+    libros: [],
     advertencias: [...set.advertencias],
   };
   if (set.casos.length === 0) throw new ErrorSetPruebas('El set no tiene casos');
@@ -175,6 +211,9 @@ async function ejecutarSetEnContexto(
           tipoDte: doc.tipoDte,
           folio: doc.folio,
         }));
+        if (o.libros) {
+          await generarLibros(svc, empresa, o, fecha, docs.map((d) => d.doc), resultado, carpeta, certificado);
+        }
         throw new Reversion(); // no consumir folios ni dejar documentos
       });
     } catch (e) {
@@ -213,5 +252,124 @@ async function ejecutarSetEnContexto(
       });
     }
   }
+  if (o.libros) {
+    await generarLibros(svc, empresa, o, fecha, docs.map((d) => d.doc), resultado);
+  }
   return resultado;
+}
+
+const TIPOS_VENTAS_LIBRO = [33, 34, 56, 61];
+
+/**
+ * Genera los libros del set. En modo simulado arma y valida los libros (sin guardar ni enviar) y
+ * escribe sus XML; en modo real los guarda y, con `libros.enviar`, los sube al SII.
+ */
+async function generarLibros(
+  svc: ServiciosCertificacion,
+  empresa: Empresa,
+  o: OpcionesEjecutarSet,
+  fecha: string,
+  docs: Documento[],
+  resultado: ResultadoSet,
+  carpeta?: string,
+  certificado?: Awaited<ReturnType<SiiClienteFactory['certificadoActivo']>>,
+): Promise<void> {
+  const opciones = o.libros as OpcionesLibrosSet;
+  const libros = svc.libros;
+  if (!libros) throw new ErrorSetPruebas('Para generar libros se requiere el servicio de libros (LibrosService)');
+  const log = o.log ?? (() => undefined);
+  const periodo = opciones.periodo ?? fecha.slice(0, 7);
+  const ids = (tipos: number[]) => docs.filter((d) => tipos.includes(d.tipoDte)).map((d) => d.id);
+
+  const tareas: Array<{
+    tipo: 'VENTA' | 'COMPRA' | 'GUIA';
+    nombre: string;
+    armar: () => Promise<LibroArmado>;
+    generar: () => ReturnType<LibrosService['generarVentas']>;
+  }> = [];
+
+  const ventasIds = ids(TIPOS_VENTAS_LIBRO);
+  if (opciones.ventas !== false) {
+    if (ventasIds.length === 0) {
+      resultado.advertencias.push('Libro de ventas omitido: el set no emitió facturas ni notas (33, 34, 56, 61)');
+    } else {
+      const dto = {
+        periodo,
+        tipoLibro: 'ESPECIAL' as const,
+        tipoEnvio: 'TOTAL' as const,
+        folioNotificacion: opciones.folioVentas ?? 1,
+        incluirBoletas: false,
+        documentoIds: ventasIds,
+        enviar: opciones.enviar === true,
+      };
+      tareas.push({
+        tipo: 'VENTA',
+        nombre: 'LibroVentas.xml',
+        armar: () => libros.armarVentas(empresa, dto, { certificado }),
+        generar: () => libros.generarVentas(o.rutEmpresa, dto),
+      });
+    }
+  }
+  if (opciones.compras) {
+    const dto = {
+      periodo,
+      tipoLibro: 'ESPECIAL' as const,
+      tipoEnvio: 'TOTAL' as const,
+      folioNotificacion: opciones.folioCompras ?? 2,
+      documentos: opciones.compras.documentos,
+      ...(opciones.compras.factorProporcionalidad !== undefined
+        ? { factorProporcionalidad: opciones.compras.factorProporcionalidad }
+        : {}),
+      enviar: opciones.enviar === true,
+    };
+    tareas.push({
+      tipo: 'COMPRA',
+      nombre: 'LibroCompras.xml',
+      armar: () => libros.armarCompras(empresa, dto, { certificado }),
+      generar: () => libros.generarCompras(o.rutEmpresa, dto),
+    });
+  }
+  if (opciones.guias) {
+    const guiasIds = ids([52]);
+    if (guiasIds.length === 0) {
+      resultado.advertencias.push('Libro de guías omitido: el set no emitió guías de despacho (52)');
+    } else {
+      const dto = {
+        periodo,
+        tipoLibro: 'ESPECIAL' as const,
+        tipoEnvio: 'TOTAL' as const,
+        folioNotificacion: opciones.folioGuias ?? 3,
+        documentoIds: guiasIds,
+        enviar: opciones.enviar === true,
+      };
+      tareas.push({
+        tipo: 'GUIA',
+        nombre: 'LibroGuias.xml',
+        armar: () => libros.armarGuias(empresa, dto, { certificado }),
+        generar: () => libros.generarGuias(o.rutEmpresa, dto),
+      });
+    }
+  }
+
+  for (const t of tareas) {
+    if (o.simular) {
+      const armado = await t.armar();
+      const ruta = join(carpeta ?? process.cwd(), t.nombre);
+      await writeFile(ruta, armado.xmlIso);
+      resultado.archivos.push(ruta);
+      resultado.advertencias.push(...armado.advertencias);
+      resultado.libros.push({ tipo: t.tipo, periodo, documentos: armado.cantidadDocumentos });
+      log(`${t.nombre}: válido contra el XSD (${armado.cantidadDocumentos} documentos)`);
+    } else {
+      const r = await t.generar();
+      resultado.libros.push({
+        tipo: t.tipo,
+        periodo,
+        documentos: r.cantidadDocumentos,
+        id: r.id,
+        trackId: r.trackId,
+      });
+      log(`Libro ${t.tipo}: id ${r.id}${r.trackId ? `, track id ${r.trackId}` : ' (guardado, sin enviar)'}`);
+    }
+  }
 }

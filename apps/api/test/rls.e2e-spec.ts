@@ -13,6 +13,7 @@ interface Lado {
   cafId: string;
   docId: string;
   envioId: string;
+  libroId: string;
 }
 
 // Demuestra RLS con SQL directo, conectado con el ROL DE APLICACIÓN (no superusuario).
@@ -71,11 +72,17 @@ describe.skipIf(!hayDb)('Row Level Security por empresa (e2e, rol de aplicación
       [e.id],
     )) as Array<{ id: string }>;
     await fx.query(`INSERT INTO envio_documentos (envio_id, documento_id) VALUES ($1, $2)`, [env.id, doc.id]);
-    return { rut, empresaId: e.id, cafId: caf.id, docId: doc.id, envioId: env.id };
+    const [libro] = (await fx.query(
+      `INSERT INTO libros (empresa_id, tipo_operacion, tipo_libro, tipo_envio, periodo, ambiente_sii, xml_libro)
+       VALUES ($1, 'VENTA', 'MENSUAL', 'TOTAL', '2026-01', 'certificacion', '<LibroCompraVenta/>') RETURNING id`,
+      [e.id],
+    )) as Array<{ id: string }>;
+    return { rut, empresaId: e.id, cafId: caf.id, docId: doc.id, envioId: env.id, libroId: libro.id };
   }
 
   async function limpiar(l: Lado | undefined) {
     if (!l) return;
+    await fx.query(`DELETE FROM libros WHERE empresa_id = $1`, [l.empresaId]);
     await fx.query(`DELETE FROM envio_documentos WHERE envio_id = $1`, [l.envioId]);
     await fx.query(`DELETE FROM envios WHERE empresa_id = $1`, [l.empresaId]);
     await fx.query(`DELETE FROM documentos WHERE empresa_id = $1`, [l.empresaId]);
@@ -128,7 +135,7 @@ describe.skipIf(!hayDb)('Row Level Security por empresa (e2e, rol de aplicación
       relforcerowsecurity: boolean;
     }>;
     expect(filas.map((f) => f.relname).sort()).toEqual(
-      ['cafs', 'certificados', 'documentos', 'empresas', 'envio_documentos', 'envios'],
+      ['cafs', 'certificados', 'documentos', 'empresas', 'envio_documentos', 'envios', 'libros'],
     );
     for (const f of filas) expect([f.relname, f.relrowsecurity, f.relforcerowsecurity]).toEqual([f.relname, true, true]);
   });
@@ -139,6 +146,7 @@ describe.skipIf(!hayDb)('Row Level Security por empresa (e2e, rol de aplicación
     ['cafs', 'empresa_id', () => A.empresaId],
     ['documentos', 'empresa_id', () => A.empresaId],
     ['envios', 'empresa_id', () => A.empresaId],
+    ['libros', 'empresa_id', () => A.empresaId],
     ['envio_documentos', 'envio_id', () => A.envioId],
   ];
 
@@ -159,9 +167,11 @@ describe.skipIf(!hayDb)('Row Level Security por empresa (e2e, rol de aplicación
         [`UPDATE cafs SET agotado = true WHERE empresa_id = $1 RETURNING 1`, A.empresaId],
         [`UPDATE documentos SET monto_total = 1 WHERE empresa_id = $1 RETURNING 1`, A.empresaId],
         [`UPDATE envios SET intentos = 9 WHERE empresa_id = $1 RETURNING 1`, A.empresaId],
+        [`UPDATE libros SET estado = 'X' WHERE empresa_id = $1 RETURNING 1`, A.empresaId],
         [`UPDATE envio_documentos SET glosa = 'x' WHERE envio_id = $1 RETURNING 1`, A.envioId],
         [`DELETE FROM envio_documentos WHERE envio_id = $1 RETURNING 1`, A.envioId],
         [`DELETE FROM envios WHERE empresa_id = $1 RETURNING 1`, A.empresaId],
+        [`DELETE FROM libros WHERE empresa_id = $1 RETURNING 1`, A.empresaId],
         [`DELETE FROM documentos WHERE empresa_id = $1 RETURNING 1`, A.empresaId],
         [`DELETE FROM cafs WHERE empresa_id = $1 RETURNING 1`, A.empresaId],
         [`DELETE FROM certificados WHERE empresa_id = $1 RETURNING 1`, A.empresaId],
@@ -183,6 +193,7 @@ describe.skipIf(!hayDb)('Row Level Security por empresa (e2e, rol de aplicación
       `INSERT INTO cafs (empresa_id, tipo_dte, folio_desde, folio_hasta, folio_siguiente, fecha_autorizacion, xml) VALUES ($1, 39, 1, 2, 1, '2026-01-01', 'x')`,
       `INSERT INTO certificados (empresa_id, rut_firmante, dv_firmante, nombre_firmante, pfx_cifrado, password_cifrada, valido_desde, valido_hasta) VALUES ($1, 1, '9', 'n', '\\x00', '\\x00', now(), now())`,
       `INSERT INTO documentos (empresa_id, tipo_dte, folio, fecha_emision, monto_total, estado, xml_firmado, ted) VALUES ($1, 33, 77, '2026-01-01', 1, 'emitido', 'x', 't')`,
+      `INSERT INTO libros (empresa_id, tipo_operacion, tipo_libro, tipo_envio, periodo, ambiente_sii, xml_libro) VALUES ($1, 'COMPRA', 'MENSUAL', 'TOTAL', '2026-01', 'certificacion', 'x')`,
     ];
     for (const sql of intentos) {
       await expect(conContexto(ctxB(), (q) => q(sql, [A.empresaId])), sql).rejects.toThrow(/row-level security/i);
@@ -224,7 +235,7 @@ describe.skipIf(!hayDb)('Row Level Security por empresa (e2e, rol de aplicación
 
   it('sin GUC fijado no hay filas (fail-closed) y no se puede escribir', async () => {
     await conContexto(null, async (q) => {
-      for (const t of ['empresas', 'certificados', 'cafs', 'documentos', 'envios', 'envio_documentos']) {
+      for (const t of ['empresas', 'certificados', 'cafs', 'documentos', 'envios', 'envio_documentos', 'libros']) {
         expect(await q(`SELECT 1 FROM ${t}`), t).toHaveLength(0);
       }
       await expect(
