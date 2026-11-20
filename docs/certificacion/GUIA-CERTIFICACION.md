@@ -75,4 +75,4 @@ Estados de envío finales: EPR, RPR, RCH, RCO, RFR, RSC, RCT, RPT, VOF. En bolet
 
 ## 8. Antes de producción
 
-Claves API propias por integración (no usar la clave de administración en producción), clave maestra propia y rotación, almacenamiento de XML en object storage, RLS multiempresa, respaldos y monitoreo (ver `docs/diseno/08-seguridad.md` y `11-operacion-y-despliegue.md`). Verifique contra maullin/apicert los formatos de respuesta reales: los clientes se probaron solo con respuestas simuladas.
+Claves API propias por integración (no usar la clave de administración en producción), clave maestra propia y rotación, almacenamiento de XML en object storage, respaldos y monitoreo (ver `docs/diseno/08-seguridad.md` y `11-operacion-y-despliegue.md`). Verifique contra maullin/apicert los formatos de respuesta reales: los clientes se probaron solo con respuestas simuladas.

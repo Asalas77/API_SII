@@ -13,6 +13,9 @@ export const envValidationSchema = Joi.object({
   DATABASE_PASSWORD: Joi.string().required(),
   DATABASE_NAME: Joi.string().required(),
   DATABASE_SSL: Joi.boolean().default(false),
+  // Rol de aplicación (sujeto a RLS). Opcional salvo en producción; ambas variables van juntas.
+  DATABASE_APP_USER: Joi.string().optional(),
+  DATABASE_APP_PASSWORD: Joi.string().optional(),
 
   SII_AMBIENTE: Joi.string()
     .valid('certificacion', 'produccion')
@@ -36,4 +39,14 @@ export const envValidationSchema = Joi.object({
       'any.invalid':
         'CERTIFICADOS_MASTER_KEY debe ser una clave de 32 bytes en base64 (openssl rand -base64 32)',
     }),
-});
+})
+  .and('DATABASE_APP_USER', 'DATABASE_APP_PASSWORD')
+  .custom((env: Record<string, unknown>, helpers) =>
+    env.NODE_ENV === 'production' && !env.DATABASE_APP_USER
+      ? helpers.error('any.invalid')
+      : env,
+  )
+  .messages({
+    'any.invalid':
+      'En producción DATABASE_APP_USER y DATABASE_APP_PASSWORD son obligatorias (rol de aplicación sin BYPASSRLS, ver src/database/README.md)',
+  });

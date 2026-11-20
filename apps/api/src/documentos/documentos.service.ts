@@ -1,9 +1,9 @@
 import { createHash } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, type EntityManager, Repository } from 'typeorm';
+import type { EntityManager } from 'typeorm';
 import { fechaSantiago } from '../comun/fechas.js';
 import { type AccesoEmpresas, asegurarRecursoDeEmpresa } from '../auth/principal.js';
+import { EjecutorEmpresa } from '../database/ejecutor-empresa.js';
 import { documentoInvalido, noEncontrado, ProblemaHttp } from '../comun/problema.js';
 import {
   aIso88591,
@@ -146,14 +146,6 @@ export function armarDocumento(
   };
 }
 
-export interface OpcionesEmision {
-  /**
-   * Transacción externa en la que participa la emisión (savepoint). Si el llamador la revierte, el
-   * folio y el documento desaparecen: así se simula una emisión sin consumir folios.
-   */
-  manager?: EntityManager;
-}
-
 export interface ResultadoEmision {
   documento: Documento;
   /** true si la `Idempotency-Key` ya existía: se devuelve el documento original sin emitir otro. */
@@ -163,8 +155,7 @@ export interface ResultadoEmision {
 @Injectable()
 export class DocumentosService {
   constructor(
-    @InjectRepository(Documento) private readonly documentos: Repository<Documento>,
-    private readonly dataSource: DataSource,
+    private readonly ejecutor: EjecutorEmpresa,
     private readonly empresas: EmpresasService,
     private readonly folios: FoliosService,
     private readonly sii: SiiClienteFactory,
@@ -173,13 +164,14 @@ export class DocumentosService {
   /**
    * Emite un documento en UNA transacción: asigna el folio (bloqueando el CAF), construye y firma el
    * DTE (TED incluido) y guarda `documentos`. Si cualquier paso falla se revierte todo y el folio
-   * NO se consume.
+   * NO se consume. Si ya hay una transacción en curso (ver `EjecutorEmpresa`; p. ej. la simulación de
+   * la CLI de certificación) participa en ella mediante un savepoint: si el llamador la revierte, el
+   * folio y el documento desaparecen.
    */
   async emitir(
     rutEmpresa: string,
     dto: EmitirDocumentoDto,
     claveIdempotencia?: string,
-    opciones: OpcionesEmision = {},
   ): Promise<{ resultado: ResultadoEmision; empresa: Empresa }> {
     const empresa = await this.empresas.obtenerPorRut(rutEmpresa);
     const huella = huellaSolicitud(dto);
@@ -194,10 +186,8 @@ export class DocumentosService {
     const fechaEmision = dto.idDoc.fechaEmision ?? fechaSantiago();
 
     try {
-      const transaccion = opciones.manager
-        ? opciones.manager.transaction.bind(opciones.manager)
-        : this.dataSource.transaction.bind(this.dataSource);
-      const documento = await transaccion(async (em: EntityManager) => {
+      const documento = await this.ejecutor.ejecutar((externo) =>
+        externo.transaction(async (em: EntityManager) => {
         const asignado = await this.folios.asignarSiguienteFolio(
           empresa.id,
           dto.idDoc.tipoDte,
@@ -232,7 +222,8 @@ export class DocumentosService {
             origen: dto.origen ?? null,
           }),
         );
-      });
+        }),
+      );
       return { resultado: { documento, repetido: false }, empresa };
     } catch (e) {
       // Dos solicitudes simultáneas con la misma clave: la perdedora revierte (sin consumir folio)
@@ -250,9 +241,11 @@ export class DocumentosService {
     clave: string,
     huella: string,
   ): Promise<ResultadoEmision | null> {
-    const previo = await this.documentos.findOne({
-      where: { empresaId, claveIdempotencia: clave },
-    });
+    const previo = await this.ejecutor.ejecutar((em) =>
+      em.getRepository(Documento).findOne({
+        where: { empresaId, claveIdempotencia: clave },
+      }),
+    );
     if (!previo) return null;
     if (previo.huellaSolicitud !== huella) {
       throw new ProblemaHttp(
@@ -273,10 +266,12 @@ export class DocumentosService {
     id: string,
     acceso: AccesoEmpresas,
   ): Promise<{ documento: Documento; empresa: Empresa }> {
-    const documento = await this.documentos.findOne({
-      where: { id },
-      relations: { empresa: true },
-    });
+    const documento = await this.ejecutor.ejecutar((em) =>
+      em.getRepository(Documento).findOne({
+        where: { id },
+        relations: { empresa: true },
+      }),
+    );
     if (!documento?.empresa) throw noEncontrado('El documento', id);
     asegurarRecursoDeEmpresa(
       acceso,

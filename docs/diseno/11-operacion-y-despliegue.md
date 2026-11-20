@@ -123,6 +123,9 @@ Las claves desconocidas no se rechazan.
 | `DATABASE_USER` | **sí** | | Usuario de la base. |
 | `DATABASE_PASSWORD` | **sí** | | Contraseña de la base. |
 | `DATABASE_NAME` | **sí** | | Nombre de la base. |
+| `DATABASE_APP_USER` | en producción | | Rol de aplicación sin superusuario ni `BYPASSRLS` (`api_sii_app`) con que la API se conecta; las migraciones usan `DATABASE_USER`. |
+| `DATABASE_APP_PASSWORD` | en producción | | Contraseña del rol de aplicación; debe estar definida al correr `migration:run` para que el rol tenga login. |
+| `API_ADMIN_KEY` | no | | Clave de administración (≥ 32 caracteres) para crear empresas y API keys. |
 | `DATABASE_SSL` | no | `false` | `true` activa TLS en la conexión. Hoy con `rejectUnauthorized: false` (no verifica el certificado del servidor; ver `08-seguridad.md`). |
 | `SII_AMBIENTE` | no | `certificacion` | `certificacion` o `produccion`. Es el ambiente **por defecto** que informa `GET /`. El ambiente efectivo de cada emisión será el de `empresas.ambiente_sii`. |
 | `CERTIFICADOS_MASTER_KEY` | **sí** | | Clave maestra AES-256 de **exactamente 32 bytes en base64** para cifrar PFX. Se genera con `openssl rand -base64 32`. Joi la valida y `CifradoService` la vuelve a validar. |
@@ -423,7 +426,7 @@ migraciones y define las variables.
 - [ ] CAF vigentes cargados y con rango suficiente; alertas de umbral configuradas.
 - [ ] Empresa en el ambiente correcto (`certificacion` hasta aprobar el proceso de certificación).
 - [ ] `CERTIFICADOS_MASTER_KEY` propia del ambiente, respaldada por separado de la base.
-- [ ] Autenticación de clientes y RLS habilitadas (ver `08-seguridad.md`), si la API es accesible desde fuera.
+- [ ] API keys propias por integración, `DATABASE_APP_USER` configurado (la API no arranca en producción como superusuario) y `migration:run` ejecutado con `DATABASE_APP_PASSWORD`.
 - [ ] Verificación de la CA de la base de datos activada (`DATABASE_SSL=true` con certificado verificado).
 - [ ] Respaldos de la base con restauración probada.
 - [ ] Hora del servidor sincronizada (semillas de 2 minutos, `TmstFirma` y `TSTED`).

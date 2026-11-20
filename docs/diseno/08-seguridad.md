@@ -64,7 +64,7 @@ Fronteras principales:
 
 | Categoría | Amenaza | Activo | Mitigación implementada | Mitigación planificada |
 |---|---|---|---|---|
-| **S**poofing | Un cliente se hace pasar por otra empresa y emite en su nombre. | A1, A3, A5 | **Implementado:** API keys (`src/auth/`) con hash SHA-256, permisos atómicos y lista de empresas; 403 en rutas `:rut` ajenas y 404 en recursos ajenos. | RLS como segunda barrera. |
+| **S**poofing | Un cliente se hace pasar por otra empresa y emite en su nombre. | A1, A3, A5 | **Implementado:** API keys (`src/auth/`) con hash SHA-256, permisos atómicos y lista de empresas; 403 en rutas `:rut` ajenas y 404 en recursos ajenos. | — |
 | **S**poofing | Un tercero se hace pasar por el SII (respuesta falsa). | A4 | HTTPS hacia hosts fijos y conocidos (`ambientes.ts`); TLS 1.2 como mínimo (ver 4.6). | Fijar certificado o CA del SII si procede; validar la forma de las respuestas. |
 | **T**ampering | Alteración del PFX o del CAF en base de datos. | A1, A3 | GCM autentica el blob del PFX: cualquier modificación hace fallar `descifrar` (`final()` lanza). | Cifrar también `cafs.xml`; hash de integridad de `documentos.xml_firmado`; auditoría. |
 | **T**ampering | Inyección de XPath en la referencia de firma para firmar otro nodo. | A5 | `idReferencia` validado con `^[A-Za-z_][\w.-]*$` antes de construir el XPath (`firma.ts`). | Mantener la regla en todo punto que arme XPath. |
@@ -74,7 +74,7 @@ Fronteras principales:
 | **I**nformation disclosure | Lectura de la clave privada del CAF en `cafs.xml`. | A3 | **Ninguna: se guarda en claro.** | Separar `RSASK` del XML y cifrarla igual que el PFX (alta prioridad). |
 | **I**nformation disclosure | Fuga de secretos en el repositorio. | A1, A2, A6 | `.gitignore` excluye `*.pfx`, `*.p12`, `*.pem`, `.env`, `.env.*` (salvo `.env.example`). | Escaneo de secretos en CI (por ejemplo gitleaks) y pre-commit. |
 | **I**nformation disclosure | Secretos o tokens en logs y mensajes de error. | A4, A1 | El código no registra tokens ni el PFX; `Cookie: TOKEN` sólo viaja en cabeceras. Precaución: `SiiError.cuerpo` conserva el cuerpo de la respuesta del SII y el mensaje incluye hasta 500 caracteres de ese cuerpo. | Lista de campos a ocultar en el logger; no registrar `cuerpo` de las respuestas de token. |
-| **I**nformation disclosure | Una empresa lee datos de otra (fallo de aislamiento). | A5 | Toda tabla de negocio tiene `empresa_id`. | RLS con rol de aplicación sin `BYPASSRLS` (hoy el filtrado depende de cada consulta). |
+| **I**nformation disclosure | Una empresa lee datos de otra (fallo de aislamiento). | A5 | **Implementado:** RLS forzada en todas las tablas con `empresa_id` y rol `api_sii_app` sin `BYPASSRLS` (§4.9). | Auditoría de accesos. |
 | **D**enial of service | Agotar el límite del SII (HTTP 405) o saturar la API. | A8 | Reintentos con backoff exponencial ante 405/5xx/red; caché de token con deduplicación de solicitudes concurrentes. | Rate limiting por cliente, cola con concurrencia controlada, circuit breaker, respeto de `X-Retry-After`/`X-RateLimit-*`. |
 | **D**enial of service | XML malicioso grande que consuma CPU o memoria. | A8 | Los XML que se parsean provienen de fuentes controladas (CAF subido por el administrador, respuestas del SII). | Límite de tamaño de cuerpo y de archivo; si se agrega intercambio de DTE recibidos, deshabilitar DTD y entidades externas y revisar contra XXE. |
 | **E**levation of privilege | Un cliente con permisos limitados ejecuta operaciones administrativas (cargar PFX o CAF). | A1, A3 | Ninguna aún. | Autorización por roles y permisos separando administración de emisión. |
@@ -173,12 +173,22 @@ Los clientes de la API son sistemas (worker de SAP B1, ERP), por eso se usan **A
 - Revocación inmediata (`DELETE /v1/api-keys/:id`), expiración opcional y `ultimo_uso_en`.
 - Pendiente: OAuth2/usuarios con JWT para un futuro backoffice, rate limiting por clave y auditoría de uso.
 
+## 4.9 Row Level Security en PostgreSQL (implementado)
+
+Segunda barrera de aislamiento: aunque un servicio olvide filtrar por empresa, PostgreSQL no devuelve ni deja escribir filas de empresas fuera del alcance de la API key. Detalle en `apps/api/src/database/README.md`.
+
+- **Rol de aplicación** `api_sii_app` (`NOSUPERUSER NOBYPASSRLS`), creado por la migración `RowLevelSecurity1795200000000`. La API se conecta con `DATABASE_APP_USER`/`DATABASE_APP_PASSWORD`; las migraciones con el dueño. Al arrancar se verifica el rol: en producción la API no arranca si es superusuario o tiene `BYPASSRLS`.
+- **Contexto**: un interceptor global copia el alcance del principal a `AsyncLocalStorage`; `EjecutorEmpresa` abre una transacción corta y fija `app.todas_empresas` y `app.empresas` (RUT `rut-DV`) con `set_config(..., true)`, válidos sólo para esa transacción. Sin contexto lanza error en vez de devolver vacío.
+- **Políticas** (`ENABLE` + `FORCE`, `USING` y `WITH CHECK`): `empresas` por `app_rut_permitido(rut, dv)`; `certificados`, `cafs`, `documentos`, `envios` por `empresa_id IN (SELECT id FROM empresas)`; `envio_documentos` a través de su envío y documento. Sin GUC fijado no se ve ninguna fila. `api_keys` no tiene RLS porque se consulta antes de conocer al principal.
+- **Procesos internos** (CLI de certificación): `ejecutarComoSistema`, explícito.
+- **Pruebas**: `test/rls.e2e-spec.ts` conecta como `api_sii_app` y comprueba en todas las tablas que SELECT/UPDATE/DELETE ajenos afectan 0 filas, que un INSERT ajeno falla, que el GUC no se filtra entre transacciones y que toda tabla con `empresa_id` tiene RLS forzada.
+- **Ojo en migraciones futuras**: con `FORCE`, una migración que toque datos de estas tablas debe fijar `app.todas_empresas = on` en su transacción.
+
 ## 5. Controles planificados
 
 | Control | Descripción | Prioridad |
 |---|---|---|
 | Cifrar la clave del CAF | Separar `RSASK` de `cafs.xml` y cifrarla con `CifradoService` (o DEK de KMS). Hoy está en claro (A3). | Alta |
-| RLS en PostgreSQL | `ROW LEVEL SECURITY` en todas las tablas con `empresa_id`, políticas con `current_setting('app.empresa_id')` fijado por transacción, rol de aplicación sin `BYPASSRLS`. | Alta |
 | Cifrado de sobre (KMS/Vault) | Una clave de datos (DEK) por empresa, cifrada con una clave maestra del KMS; el blob ya tiene byte de versión para el cambio de formato. Reemplaza la clave maestra única en variable de entorno. | Alta |
 | Rotación | De la clave maestra (re-cifrado por lotes leyendo la versión del blob), del certificado de la empresa (`certificados.activo` y vigencia) y de los CAF (anulación y carga de uno nuevo). | Media |
 | Auditoría | Registro de quién cargó certificados y CAF, emitió, anuló o consultó; acceso a secretos; inmutable y con retención. | Media |
@@ -221,7 +231,7 @@ Clave maestra y secretos de infraestructura:
 10. Entregar la clave por el gestor de secretos del orquestador (o KMS/Vault); nunca en la imagen ni en el
     repositorio. Respaldarla por separado de la base de datos: sin la clave los PFX son irrecuperables, y quien tenga
     ambas puede descifrarlos.
-11. Usuario de BD con el mínimo privilegio para la aplicación (sin `SUPERUSER`, y sin `BYPASSRLS` cuando exista RLS);
+11. Usuario de BD con el mínimo privilegio para la aplicación (sin `SUPERUSER` ni `BYPASSRLS`: `api_sii_app`);
     un usuario distinto para ejecutar migraciones.
 12. Separar certificados de **certificación** y de **producción**; el ambiente se decide por empresa y un error de
     configuración no debe enviar documentos de prueba a producción.
@@ -233,6 +243,5 @@ Clave maestra y secretos de infraestructura:
 | `cafs.xml` guarda `RSASK` en claro. | Emisión fraudulenta ante fuga de la base. | 3, 5 |
 | Clave maestra única en variable de entorno; sin rotación. | Un compromiso descifra todo. | 4.1, 5 |
 | `rejectUnauthorized: false` en la conexión TLS a la base. | Intermediario activo. | 4.6 |
-| Aislamiento multiempresa sólo por convención de consulta (sin RLS). | Fuga entre empresas por error de programación. | 3, 5 |
 | `.env.example` trae una clave maestra conocida que Joi acepta. | Uso accidental en producción. | 4.2 |
 | Ausencia de auditoría y de límites de tamaño o tasa. | Repudio y DoS. | 3, 5 |

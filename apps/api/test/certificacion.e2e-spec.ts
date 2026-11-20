@@ -2,7 +2,7 @@ import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Test } from '@nestjs/testing';
-import { DataSource } from 'typeorm';
+import type { DataSource } from 'typeorm';
 import { AppModule } from '../src/app.module.js';
 import { CertificadosService } from '../src/certificados/certificados.service.js';
 import { Certificado } from '../src/certificados/entities/certificado.entity.js';
@@ -10,6 +10,8 @@ import { parsearSet } from '../src/certificacion/index.js';
 import { ejecutarSet, type ServiciosCertificacion } from '../src/certificacion/ejecutar-set.js';
 import { DocumentosService } from '../src/documentos/documentos.service.js';
 import { Documento } from '../src/documentos/entities/documento.entity.js';
+import { comoSistema } from '../src/database/contexto-empresa.js';
+import { EjecutorEmpresa } from '../src/database/ejecutor-empresa.js';
 import { calcularDv } from '../src/dte-core/index.js';
 import { generarPfxPrueba } from '../src/dte-core/testing/testing.js';
 import { Empresa } from '../src/empresas/entities/empresa.entity.js';
@@ -24,6 +26,7 @@ import { SiiClienteFactory } from '../src/sii/sii-cliente.factory.js';
 import { generarCafRealista } from '../src/testing/caf-realista.js';
 import { crearSiiSimulado } from '../src/testing/sii-simulado.js';
 import { postgresDisponible, rutAleatorio } from './helpers/db.js';
+import { crearDsFixtures } from './helpers/fixtures.js';
 
 const hayDb = await postgresDisponible();
 
@@ -55,16 +58,21 @@ describe.skipIf(!hayDb)('Herramienta del set de pruebas (e2e, con DB)', () => {
       .useValue(sii.fetch)
       .compile();
     await m.init();
-    close = () => m.close();
-    ds = m.get(DataSource);
+    ds = await crearDsFixtures();
+    close = async () => {
+      await ds.destroy();
+      await m.close();
+    };
     svc = {
-      dataSource: ds,
+      ejecutor: m.get(EjecutorEmpresa),
       empresas: m.get(EmpresasService),
       documentos: m.get(DocumentosService),
       envios: m.get(EnviosService),
       sii: m.get(SiiClienteFactory),
     };
     carpeta = mkdtempSync(join(tmpdir(), 'set-'));
+    // Los servicios exigen contexto de empresa (RLS): el setup corre como sistema.
+    await comoSistema(async () => {
     const empresa = await svc.empresas.crear({
       rut: rut.texto,
       razonSocial: 'EMPRESA SET SPA',
@@ -88,6 +96,7 @@ describe.skipIf(!hayDb)('Herramienta del set de pruebas (e2e, con DB)', () => {
         fechaAutorizacion: new Date(), xml, rutEmisor: rut.texto,
       });
     }
+    });
   });
 
   afterAll(async () => {

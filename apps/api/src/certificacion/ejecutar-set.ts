@@ -1,7 +1,8 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { DataSource, EntityManager } from 'typeorm';
 import { fechaSantiago } from '../comun/fechas.js';
+import { comoSistema } from '../database/contexto-empresa.js';
+import { EjecutorEmpresa } from '../database/ejecutor-empresa.js';
 import { DocumentosService } from '../documentos/documentos.service.js';
 import type { Documento } from '../documentos/entities/documento.entity.js';
 import { aIso88591, validarXsd } from '../dte-core/index.js';
@@ -16,7 +17,8 @@ import {
 import { ErrorSetPruebas, type SetPruebas } from './tipos.js';
 
 export interface ServiciosCertificacion {
-  dataSource: DataSource;
+  /** Ejecutor de base de datos; la CLI corre con contexto de sistema (ver `ejecutarSet`). */
+  ejecutor: EjecutorEmpresa;
   empresas: EmpresasService;
   documentos: DocumentosService;
   envios: EnviosService;
@@ -61,8 +63,21 @@ class Reversion extends Error {}
 
 const BOLETAS = [39, 41];
 
-/** Emite todos los casos del set (en orden) y los envía, o los simula. */
+/**
+ * Emite todos los casos del set (en orden) y los envía, o los simula.
+ *
+ * Es un proceso interno y de confianza (CLI): corre con el contexto `sistema` (todas las empresas)
+ * de RLS, igual que el admin, y accede a la empresa indicada por `rutEmpresa`.
+ */
 export async function ejecutarSet(
+  svc: ServiciosCertificacion,
+  set: SetPruebas,
+  o: OpcionesEjecutarSet,
+): Promise<ResultadoSet> {
+  return comoSistema(() => ejecutarSetEnContexto(svc, set, o));
+}
+
+async function ejecutarSetEnContexto(
   svc: ServiciosCertificacion,
   set: SetPruebas,
   o: OpcionesEjecutarSet,
@@ -84,7 +99,7 @@ export async function ejecutarSet(
   const docs: Array<{ caso: string; doc: Documento }> = [];
   const prefijo = o.prefijoClave ?? `set-${set.numeroAtencion ?? 'sin-numero'}`;
 
-  const emitirTodos = async (manager?: EntityManager) => {
+  const emitirTodos = async () => {
     for (const [i, caso] of set.casos.entries()) {
       const dto = casoADocumento(caso, {
         fechaEmision: fecha,
@@ -95,7 +110,6 @@ export async function ejecutarSet(
         o.rutEmpresa,
         dto,
         o.simular ? undefined : `${prefijo}-${caso.id}`,
-        { manager },
       );
       emitidos.set(caso.id, {
         tipoDte: r.documento.tipoDte,
@@ -120,8 +134,9 @@ export async function ejecutarSet(
     const carpeta = o.carpetaSalida ?? join(process.cwd(), 'salida-set');
     await mkdir(carpeta, { recursive: true });
     try {
-      await svc.dataSource.transaction(async (em) => {
-        await emitirTodos(em);
+      // La transacción vigente (ALS) la reutilizan emitir() y los folios mediante savepoints.
+      await svc.ejecutor.ejecutarComoSistema(async () => {
+        await emitirTodos();
         const certificado = await svc.sii.certificadoActivo(empresa.id);
         for (const { caso, doc } of docs) {
           const base = `${caso}_T${doc.tipoDte}_F${doc.folio}`;

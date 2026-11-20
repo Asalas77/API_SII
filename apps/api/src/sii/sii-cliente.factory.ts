@@ -1,8 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import type { Repository } from 'typeorm';
 import { Certificado } from '../certificados/entities/certificado.entity.js';
 import { ProblemaHttp } from '../comun/problema.js';
+import { EjecutorEmpresa } from '../database/ejecutor-empresa.js';
 import { cargarPfx, crearFirmadorSii } from '../dte-core/index.js';
 import type { Empresa } from '../empresas/entities/empresa.entity.js';
 import { CifradoService } from '../seguridad/cifrado.service.js';
@@ -38,18 +37,19 @@ export interface ClientesSii {
 @Injectable()
 export class SiiClienteFactory {
   constructor(
-    @InjectRepository(Certificado)
-    private readonly certificados: Repository<Certificado>,
+    private readonly ejecutor: EjecutorEmpresa,
     private readonly cifrado: CifradoService,
     @Inject(SII_FETCH) private readonly fetchImpl: FetchImpl,
   ) {}
 
   /** Certificado activo (el más reciente) descifrado; 422 si la empresa no tiene uno vigente. */
   async certificadoActivo(empresaId: string): Promise<CertificadoActivo> {
-    const cert = await this.certificados.findOne({
-      where: { empresaId, activo: true },
-      order: { creadoEn: 'DESC' },
-    });
+    const cert = await this.ejecutor.ejecutar((em) =>
+      em.getRepository(Certificado).findOne({
+        where: { empresaId, activo: true },
+        order: { creadoEn: 'DESC' },
+      }),
+    );
     if (!cert) {
       throw new ProblemaHttp(
         422,

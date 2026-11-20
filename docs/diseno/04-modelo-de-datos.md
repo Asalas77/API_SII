@@ -304,7 +304,7 @@ puede aparecer en varios envíos (reenvío tras un rechazo del sobre).
 | Fechas de calendario | Columnas `date` (`fecha_emision`, `fecha_autorizacion`, `fecha_vencimiento`, `fecha_resolucion_sii`). En TypeScript son `string` `YYYY-MM-DD`, para evitar corrimientos de zona horaria. `FoliosService` usa `aFechaSql(fecha: Date)` con el calendario local. |
 | Instantes | `timestamptz`. `creado_en` con `@CreateDateColumn`, `actualizado_en` con `@UpdateDateColumn`. |
 | Montos | `bigint` (CLP enteros). `pg` devuelve `bigint` como `string`, por lo que `documentos` aplica un `transformer` (`bigintNumero`) que convierte a `number` al leer. Es seguro mientras los montos no superen `Number.MAX_SAFE_INTEGER` (9.007.199.254.740.991 pesos, muy por encima de cualquier documento real). |
-| Multiempresa | Toda tabla de negocio lleva `empresa_id`. Hoy el aislamiento depende de filtrar por `empresa_id` en cada consulta (no hay RLS, ver sección 9). |
+| Multiempresa | Toda tabla de negocio lleva `empresa_id`. Además del filtrado en la aplicación, PostgreSQL aplica RLS forzada por empresa (ver `08-seguridad.md` §4.9). |
 | Enums | Con nombre explícito (`enumName`) y creados con `CREATE TYPE` en la migración. Cambiar sus valores exige una migración con `ALTER TYPE ... ADD VALUE`. |
 | Esquema | `synchronize` está **desactivado** en `database.module.ts` y `data-source.ts`. Todo cambio va por migración. |
 
@@ -456,9 +456,6 @@ Las entidades se registran con `autoLoadEntities: true`; el `DataSource` de la C
 
 Todo lo siguiente es **Planificado** (detalle de seguridad en `08-seguridad.md`):
 
-- **RLS multiempresa**: habilitar `ROW LEVEL SECURITY` en todas las tablas con `empresa_id`, políticas por
-  `current_setting('app.empresa_id')`, un rol de aplicación sin `BYPASSRLS` y el setting fijado por transacción. Hoy
-  el aislamiento depende de filtrar siempre por `empresa_id`.
 - **Retención**: política de conservación legal de DTE y envíos (6 años, *a verificar*), y purga o archivado de
   `envios.xml_envio` y `envios.respuesta`.
 - **Object storage** para XML firmado, XML de envío y PDF: hoy `documentos.xml_firmado` y `envios.xml_envio` son

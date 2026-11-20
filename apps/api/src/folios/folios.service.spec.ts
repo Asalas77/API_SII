@@ -1,4 +1,4 @@
-import type { DataSource } from 'typeorm';
+import type { EjecutorEmpresa } from '../database/ejecutor-empresa.js';
 import { CafInvalidoError } from './folios.errors.js';
 import type { CifradoService } from '../seguridad/cifrado.service.js';
 import { aFechaSql, calcularVencimientoCaf, FoliosService } from './folios.service.js';
@@ -27,9 +27,9 @@ describe('calcularVencimientoCaf', () => {
 });
 
 describe('FoliosService.registrarCaf (validación de rango)', () => {
-  const transaction = vi.fn();
+  const ejecutar = vi.fn();
   const service = new FoliosService(
-    { transaction } as unknown as DataSource,
+    { ejecutar } as unknown as EjecutorEmpresa,
     {} as unknown as CifradoService,
   );
   const base = {
@@ -45,7 +45,7 @@ describe('FoliosService.registrarCaf (validación de rango)', () => {
     await expect(
       service.registrarCaf('e', { ...base, folioDesde: 0, folioHasta: 5 }),
     ).rejects.toBeInstanceOf(CafInvalidoError);
-    expect(transaction).not.toHaveBeenCalled();
+    expect(ejecutar).not.toHaveBeenCalled();
   });
 });
 
@@ -55,10 +55,10 @@ describe('FoliosService.registrarCaf (RUT del CAF)', () => {
       findOne: vi.fn().mockResolvedValue(empresa),
       query: vi.fn(),
     };
-    const dataSource = {
-      transaction: (fn: (em: unknown) => unknown) => fn(em),
-    } as unknown as DataSource;
-    return { service: new FoliosService(dataSource, {} as CifradoService), em };
+    const ejecutor = {
+      ejecutar: (fn: (em: unknown) => unknown) => fn(em),
+    } as unknown as EjecutorEmpresa;
+    return { service: new FoliosService(ejecutor, {} as CifradoService), em };
   }
   const caf = {
     tipoDte: 33,

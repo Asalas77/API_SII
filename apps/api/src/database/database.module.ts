@@ -1,8 +1,13 @@
-import { Module } from '@nestjs/common';
+import { Global, Module } from '@nestjs/common';
 import { ConfigService, type ConfigType } from '@nestjs/config';
+import { APP_INTERCEPTOR } from '@nestjs/core';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { databaseConfig } from '../config/index.js';
+import { ContextoEmpresaInterceptor } from './contexto-empresa.interceptor.js';
+import { EjecutorEmpresa } from './ejecutor-empresa.js';
+import { VerificadorRolBd } from './verificador-rol.js';
 
+@Global()
 @Module({
   imports: [
     TypeOrmModule.forRootAsync({
@@ -14,8 +19,10 @@ import { databaseConfig } from '../config/index.js';
           type: 'postgres' as const,
           host: db.host,
           port: db.port,
-          username: db.username,
-          password: db.password,
+          // En runtime la API usa el rol de aplicación (sujeto a RLS) si está configurado; las
+          // migraciones (CLI) siguen usando DATABASE_USER, el dueño del esquema.
+          username: db.appUsername ?? db.username,
+          password: db.appUsername ? db.appPassword : db.password,
           database: db.database,
           ssl: db.ssl ? { rejectUnauthorized: false } : false,
           autoLoadEntities: true,
@@ -27,5 +34,12 @@ import { databaseConfig } from '../config/index.js';
       },
     }),
   ],
+  providers: [
+    EjecutorEmpresa,
+    VerificadorRolBd,
+    // Fija el contexto de empresa (AsyncLocalStorage) a partir del principal, tras los guards.
+    { provide: APP_INTERCEPTOR, useClass: ContextoEmpresaInterceptor },
+  ],
+  exports: [EjecutorEmpresa],
 })
 export class DatabaseModule {}

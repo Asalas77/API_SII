@@ -2,8 +2,8 @@ import 'reflect-metadata';
 import { readFile } from 'node:fs/promises';
 import { parseArgs } from 'node:util';
 import { NestFactory } from '@nestjs/core';
-import { DataSource } from 'typeorm';
 import { AppModule } from '../app.module.js';
+import { EjecutorEmpresa } from '../database/ejecutor-empresa.js';
 import { DocumentosService } from '../documentos/documentos.service.js';
 import { EmpresasService } from '../empresas/empresas.service.js';
 import { EnviosService } from '../envios/envios.service.js';
@@ -50,7 +50,7 @@ async function main(): Promise<number> {
   try {
     const r = await ejecutarSet(
       {
-        dataSource: app.get(DataSource),
+        ejecutor: app.get(EjecutorEmpresa),
         empresas: app.get(EmpresasService),
         documentos: app.get(DocumentosService),
         envios: app.get(EnviosService),

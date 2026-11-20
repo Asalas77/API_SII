@@ -1,6 +1,7 @@
 import { Test } from '@nestjs/testing';
-import { DataSource } from 'typeorm';
+import type { DataSource } from 'typeorm';
 import { ConfigModule } from '../src/config/config.module.js';
+import { comoSistema } from '../src/database/contexto-empresa.js';
 import { DatabaseModule } from '../src/database/database.module.js';
 import { Empresa } from '../src/empresas/entities/empresa.entity.js';
 import { EmpresasModule } from '../src/empresas/empresas.module.js';
@@ -12,6 +13,7 @@ import {
 import { FoliosModule } from '../src/folios/folios.module.js';
 import { FoliosService } from '../src/folios/folios.service.js';
 import { postgresDisponible } from './helpers/db.js';
+import { crearDsFixtures } from './helpers/fixtures.js';
 
 const hayDb = await postgresDisponible();
 
@@ -30,9 +32,22 @@ describe.skipIf(!hayDb)(
         imports: [ConfigModule, DatabaseModule, EmpresasModule, FoliosModule],
       }).compile();
       await modulo.init();
-      close = () => modulo.close();
-      dataSource = modulo.get(DataSource);
-      service = modulo.get(FoliosService);
+      dataSource = await crearDsFixtures();
+      close = async () => {
+        await dataSource.destroy();
+        await modulo.close();
+      };
+      // Los servicios exigen contexto de empresa (RLS): cada llamada corre como sistema.
+      const real = modulo.get(FoliosService);
+      service = new Proxy(real, {
+        get: (destino, prop) => {
+          const valor = Reflect.get(destino, prop, destino) as unknown;
+          return typeof valor === 'function'
+            ? (...args: unknown[]) =>
+                comoSistema(() => (valor as (...a: unknown[]) => unknown).apply(destino, args))
+            : valor;
+        },
+      });
 
       const empresa = await dataSource.getRepository(Empresa).save({
         rut,

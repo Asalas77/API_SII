@@ -1,7 +1,7 @@
 import type { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
-import { DataSource } from 'typeorm';
+import type { DataSource } from 'typeorm';
 import { AppModule } from '../src/app.module.js';
 import { configurarApp } from '../src/app.setup.js';
 import { ApiKey } from '../src/auth/entities/api-key.entity.js';
@@ -12,6 +12,7 @@ import { EnvioDocumento } from '../src/envios/entities/envio-documento.entity.js
 import { Envio } from '../src/envios/entities/envio.entity.js';
 import { ADMIN_KEY, configurarAdminKey } from './helpers/auth.js';
 import { postgresDisponible, rutAleatorio } from './helpers/db.js';
+import { crearDsFixtures } from './helpers/fixtures.js';
 
 const hayDb = await postgresDisponible();
 
@@ -46,7 +47,8 @@ describe.skipIf(!hayDb)('Autenticación y autorización (e2e, con DB)', () => {
     app = modulo.createNestApplication();
     configurarApp(app);
     await app.init();
-    ds = modulo.get(DataSource);
+    // Fixtures con conexión propia del dueño (ve todas las empresas); la API usa el rol de aplicación.
+    ds = await crearDsFixtures();
   });
 
   afterAll(async () => {
@@ -62,6 +64,7 @@ describe.skipIf(!hayDb)('Autenticación y autorización (e2e, con DB)', () => {
     }
     for (const id of idsKeys) await ds.getRepository(ApiKey).delete({ id });
     await app.close();
+    await ds.destroy();
   });
 
   it('GET / y /health son públicos', async () => {

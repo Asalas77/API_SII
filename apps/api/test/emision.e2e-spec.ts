@@ -1,7 +1,7 @@
 import type { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
-import { DataSource } from 'typeorm';
+import type { DataSource } from 'typeorm';
 import { AppModule } from '../src/app.module.js';
 import { configurarApp } from '../src/app.setup.js';
 import { Certificado } from '../src/certificados/entities/certificado.entity.js';
@@ -17,6 +17,7 @@ import { generarCafRealista } from '../src/testing/caf-realista.js';
 import { crearSiiSimulado } from '../src/testing/sii-simulado.js';
 import { ADMIN_KEY, configurarAdminKey } from './helpers/auth.js';
 import { postgresDisponible, rutAleatorio } from './helpers/db.js';
+import { crearDsFixtures } from './helpers/fixtures.js';
 
 const hayDb = await postgresDisponible();
 
@@ -71,7 +72,8 @@ describe.skipIf(!hayDb)('Emisión y envío por la API /v1 (e2e, con DB)', () => 
     app = modulo.createNestApplication();
     configurarApp(app);
     await app.init();
-    dataSource = modulo.get(DataSource);
+    // Fixtures con conexión propia del dueño (ve todas las empresas); la API usa el rol de aplicación.
+    dataSource = await crearDsFixtures();
   });
 
   afterAll(async () => {
@@ -88,6 +90,7 @@ describe.skipIf(!hayDb)('Emisión y envío por la API /v1 (e2e, con DB)', () => 
       await dataSource.getRepository(Empresa).delete({ id: empresa.id });
     }
     await app.close();
+    await dataSource.destroy();
   });
 
   it('crea la empresa, rechaza duplicados y RUT inválidos con problem+json', async () => {

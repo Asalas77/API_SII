@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, In, Repository, type EntityManager } from 'typeorm';
+import { In, type EntityManager } from 'typeorm';
 import type { AccesoEmpresas } from '../auth/principal.js';
+import { EjecutorEmpresa } from '../database/ejecutor-empresa.js';
 import { Documento } from '../documentos/entities/documento.entity.js';
 import { noEncontrado, ProblemaHttp } from '../comun/problema.js';
 import {
@@ -74,10 +74,7 @@ function trozos<T>(lista: T[], tamano: number): T[][] {
 @Injectable()
 export class EnviosService {
   constructor(
-    @InjectRepository(Envio) private readonly envios: Repository<Envio>,
-    @InjectRepository(EnvioDocumento)
-    private readonly enviosDocs: Repository<EnvioDocumento>,
-    private readonly dataSource: DataSource,
+    private readonly ejecutor: EjecutorEmpresa,
     private readonly empresas: EmpresasService,
     private readonly sii: SiiClienteFactory,
   ) {}
@@ -99,7 +96,7 @@ export class EnviosService {
     const clientes = await this.sii.paraEmpresa(empresa);
 
     // 1) Reservar documentos y registrar los envíos (una transacción).
-    const lotes = await this.dataSource.transaction(async (em) => {
+    const lotes = await this.ejecutor.ejecutar(async (em) => {
       const docs = await this.seleccionar(em, empresa, dto);
       const { canal, grupos } = this.agrupar(docs);
 
@@ -150,7 +147,7 @@ export class EnviosService {
           canal === 'boleta'
             ? await clientes.boleta.enviarBoletas(sobre.xmlIso, nombre)
             : await clientes.dte.enviarDte(sobre.xmlIso, nombre);
-        await this.dataSource.transaction(async (em) => {
+        await this.ejecutor.ejecutar(async (em) => {
           await em.update(
             Envio,
             { id: envio.id },
@@ -171,7 +168,7 @@ export class EnviosService {
           );
         });
       } catch (e) {
-        await this.dataSource.transaction(async (em) => {
+        await this.ejecutor.ejecutar(async (em) => {
           await em.update(
             Envio,
             { id: envio.id },
@@ -313,30 +310,36 @@ export class EnviosService {
   async obtener(idOTrack: string, acceso: AccesoEmpresas): Promise<EnvioRespuesta> {
     const permitidas = await this.empresas.idsPermitidos(acceso);
     const filtroEmpresa = permitidas === null ? {} : { empresaId: In(permitidas) };
-    const envio = UUID.test(idOTrack)
-      ? await this.envios.findOne({ where: { id: idOTrack, ...filtroEmpresa } })
-      : await this.envios.findOne({
-          where: { trackId: idOTrack, ...filtroEmpresa },
-          order: { creadoEn: 'DESC' },
-        });
+    const envio = await this.ejecutor.ejecutar((em) =>
+      UUID.test(idOTrack)
+        ? em.getRepository(Envio).findOne({ where: { id: idOTrack, ...filtroEmpresa } })
+        : em.getRepository(Envio).findOne({
+            where: { trackId: idOTrack, ...filtroEmpresa },
+            order: { creadoEn: 'DESC' },
+          }),
+    );
     if (!envio) throw noEncontrado('El envío', idOTrack);
     return this.detalle(envio.id);
   }
 
   async listar(rutEmpresa: string): Promise<EnvioRespuesta[]> {
     const empresa = await this.empresas.obtenerPorRut(rutEmpresa);
-    const envios = await this.envios.find({
-      where: { empresaId: empresa.id },
-      order: { creadoEn: 'DESC' },
-      take: 100,
-    });
+    const envios = await this.ejecutor.ejecutar((em) =>
+      em.getRepository(Envio).find({
+        where: { empresaId: empresa.id },
+        order: { creadoEn: 'DESC' },
+        take: 100,
+      }),
+    );
     return Promise.all(envios.map((e) => this.detalle(e.id)));
   }
 
   /** Consulta el estado al SII y actualiza el envío y sus documentos. */
   async consultar(idOTrack: string, acceso: AccesoEmpresas): Promise<EnvioRespuesta> {
     const actual = await this.obtener(idOTrack, acceso);
-    const envio = await this.envios.findOneOrFail({ where: { id: actual.id } });
+    const envio = await this.ejecutor.ejecutar((em) =>
+      em.getRepository(Envio).findOneOrFail({ where: { id: actual.id } }),
+    );
     if (!envio.trackId) {
       throw estadoInvalido('El envío no tiene track id (no llegó a enviarse al SII)');
     }
@@ -382,7 +385,7 @@ export class EnviosService {
       });
     }
 
-    await this.dataSource.transaction(async (em) => {
+    await this.ejecutor.ejecutar(async (em) => {
       await em.update(
         Envio,
         { id: envio.id },
@@ -412,11 +415,13 @@ export class EnviosService {
   }
 
   private async detalle(envioId: string): Promise<EnvioRespuesta> {
-    const envio = await this.envios.findOneOrFail({ where: { id: envioId } });
-    const filas = await this.enviosDocs.find({
-      where: { envioId },
-      relations: { documento: true },
-    });
+    const { envio, filas } = await this.ejecutor.ejecutar(async (em) => ({
+      envio: await em.getRepository(Envio).findOneOrFail({ where: { id: envioId } }),
+      filas: await em.getRepository(EnvioDocumento).find({
+        where: { envioId },
+        relations: { documento: true },
+      }),
+    }));
     // Orden de los documentos dentro del sobre: por tipo y folio.
     filas.sort(
       (a, b) =>

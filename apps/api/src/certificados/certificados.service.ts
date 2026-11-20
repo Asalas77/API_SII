@@ -1,7 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
 import { noEncontrado, ProblemaHttp } from '../comun/problema.js';
+import { EjecutorEmpresa } from '../database/ejecutor-empresa.js';
 import { cargarPfx, separarRut } from '../dte-core/index.js';
 import { EmpresasService } from '../empresas/empresas.service.js';
 import { CifradoService } from '../seguridad/cifrado.service.js';
@@ -34,9 +33,7 @@ const invalido = (detail: string) =>
 @Injectable()
 export class CertificadosService {
   constructor(
-    @InjectRepository(Certificado)
-    private readonly certificados: Repository<Certificado>,
-    private readonly dataSource: DataSource,
+    private readonly ejecutor: EjecutorEmpresa,
     private readonly empresas: EmpresasService,
     private readonly cifrado: CifradoService,
   ) {}
@@ -72,7 +69,7 @@ export class CertificadosService {
       );
     }
 
-    return this.dataSource.transaction(async (em) => {
+    return this.ejecutor.ejecutar(async (em) => {
       await em.update(
         Certificado,
         { empresaId: empresa.id, activo: true },
@@ -96,18 +93,19 @@ export class CertificadosService {
 
   async listar(rutEmpresa: string): Promise<Certificado[]> {
     const empresa = await this.empresas.obtenerPorRut(rutEmpresa);
-    return this.certificados.find({
-      where: { empresaId: empresa.id },
-      order: { creadoEn: 'DESC' },
-    });
+    return this.ejecutor.ejecutar((em) =>
+      em.getRepository(Certificado).find({
+        where: { empresaId: empresa.id },
+        order: { creadoEn: 'DESC' },
+      }),
+    );
   }
 
   /** Desactiva (no borra) un certificado de la empresa. */
   async desactivar(rutEmpresa: string, id: string): Promise<void> {
     const empresa = await this.empresas.obtenerPorRut(rutEmpresa);
-    const r = await this.certificados.update(
-      { id, empresaId: empresa.id },
-      { activo: false },
+    const r = await this.ejecutor.ejecutar((em) =>
+      em.getRepository(Certificado).update({ id, empresaId: empresa.id }, { activo: false }),
     );
     if (!r.affected) throw noEncontrado('El certificado', id);
   }

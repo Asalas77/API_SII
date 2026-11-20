@@ -1,9 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { type AccesoEmpresas, normalizarRut } from '../auth/principal.js';
-import { InjectRepository } from '@nestjs/typeorm';
-import { type DeepPartial, In, QueryFailedError, Repository } from 'typeorm';
+import { type DeepPartial, In, QueryFailedError } from 'typeorm';
 import { Certificado } from '../certificados/entities/certificado.entity.js';
 import { noEncontrado, ProblemaHttp } from '../comun/problema.js';
+import { EjecutorEmpresa } from '../database/ejecutor-empresa.js';
 import { separarRut } from '../dte-core/index.js';
 import type { ActualizarEmpresaDto, CrearEmpresaDto } from './empresas.dto.js';
 import { Empresa } from './entities/empresa.entity.js';
@@ -77,16 +77,14 @@ export function esViolacionUnica(e: unknown): boolean {
 
 @Injectable()
 export class EmpresasService {
-  constructor(
-    @InjectRepository(Empresa) private readonly empresas: Repository<Empresa>,
-    @InjectRepository(Certificado)
-    private readonly certificados: Repository<Certificado>,
-  ) {}
+  constructor(private readonly ejecutor: EjecutorEmpresa) {}
 
   /** Empresa por RUT (`76086428-5`); 404 si no existe. */
   async obtenerPorRut(rut: string): Promise<Empresa> {
     const { numero, dv } = partirRut(rut);
-    const empresa = await this.empresas.findOne({ where: { rut: numero } });
+    const empresa = await this.ejecutor.ejecutar((em) =>
+      em.getRepository(Empresa).findOne({ where: { rut: numero } }),
+    );
     if (!empresa || empresa.dv !== dv) throw noEncontrado('La empresa', rut);
     return empresa;
   }
@@ -102,14 +100,18 @@ export class EmpresasService {
       .map((r) => Number.parseInt(r, 10))
       .filter((n) => Number.isFinite(n));
     if (numeros.length === 0) return [];
-    const filas = await this.empresas.find({ where: { rut: In(numeros) } });
+    const filas = await this.ejecutor.ejecutar((em) =>
+      em.getRepository(Empresa).find({ where: { rut: In(numeros) } }),
+    );
     return filas
       .filter((e) => permitidos.has(normalizarRut(`${e.rut}-${e.dv}`) ?? ''))
       .map((e) => e.id);
   }
 
   async obtenerPorId(id: string): Promise<Empresa> {
-    const empresa = await this.empresas.findOne({ where: { id } });
+    const empresa = await this.ejecutor.ejecutar((em) =>
+      em.getRepository(Empresa).findOne({ where: { id } }),
+    );
     if (!empresa) throw noEncontrado('La empresa', id);
     return empresa;
   }
@@ -141,7 +143,15 @@ export class EmpresasService {
       datos.dvProveedorSoftware = p.dv;
     }
     try {
-      return await this.empresas.save(this.empresas.create(datos));
+      // La empresa nueva aún no está en el alcance de una key acotada: se amplía el contexto con su
+      // RUT solo para este INSERT (WITH CHECK de RLS); luego el controlador se la agrega a la key.
+      return await this.ejecutor.ejecutar(
+        (em) => {
+          const repo = em.getRepository(Empresa);
+          return repo.save(repo.create(datos));
+        },
+        { ampliarRuts: [`${numero}-${dv}`] },
+      );
     } catch (e) {
       if (esViolacionUnica(e)) {
         throw new ProblemaHttp(
@@ -161,9 +171,11 @@ export class EmpresasService {
       dto.ambienteSii === 'produccion' &&
       empresa.ambienteSii !== 'produccion'
     ) {
-      const activos = await this.certificados.count({
-        where: { empresaId: empresa.id, activo: true },
-      });
+      const activos = await this.ejecutor.ejecutar((em) =>
+        em.getRepository(Certificado).count({
+          where: { empresaId: empresa.id, activo: true },
+        }),
+      );
       if (activos === 0) {
         throw new ProblemaHttp(
           422,
@@ -185,6 +197,6 @@ export class EmpresasService {
         empresa.dvProveedorSoftware = p.dv;
       }
     }
-    return this.empresas.save(empresa);
+    return this.ejecutor.ejecutar((em) => em.getRepository(Empresa).save(empresa));
   }
 }

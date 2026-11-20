@@ -2,6 +2,7 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   JoinColumn,
   ManyToOne,
   PrimaryColumn,
@@ -13,6 +14,7 @@ export type CanalEnvio = 'dte' | 'boleta';
 
 /** Envío al SII (un sobre EnvioDTE o EnvioBOLETA) con su Track ID. */
 @Entity('envios')
+@Index('idx_envios_empresa', ['empresaId'])
 export class Envio {
   @PrimaryColumn({ type: 'uuid', default: () => 'gen_random_uuid()' })
   id: string;

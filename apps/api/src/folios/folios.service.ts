@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
-import { DataSource, type EntityManager } from 'typeorm';
+import type { EntityManager } from 'typeorm';
 import { aFechaCalendario } from '../comun/fechas.js';
+import { EjecutorEmpresa } from '../database/ejecutor-empresa.js';
 import { sumarMeses, TIPOS_CAF_CON_VENCIMIENTO } from '../dte-core/index.js';
 import { Empresa } from '../empresas/entities/empresa.entity.js';
 import { CifradoService } from '../seguridad/cifrado.service.js';
@@ -69,7 +70,7 @@ export function calcularVencimientoCaf(
 @Injectable()
 export class FoliosService {
   constructor(
-    private readonly dataSource: DataSource,
+    private readonly ejecutor: EjecutorEmpresa,
     private readonly cifrado: CifradoService,
   ) {}
 
@@ -93,7 +94,7 @@ export class FoliosService {
       ? aFechaCalendario(caf.fechaVencimiento)
       : calcularVencimientoCaf(caf.tipoDte, fechaAutorizacion);
 
-    return this.dataSource.transaction(async (em) => {
+    return this.ejecutor.ejecutar(async (em) => {
       if (caf.rutEmisor !== undefined) {
         const empresa = await em.findOne(Empresa, { where: { id: empresaId } });
         if (!empresa) {
@@ -173,7 +174,9 @@ export class FoliosService {
     const hoy = aFechaCalendario(fecha);
     const ejecutar = (em: EntityManager) =>
       this.asignarEn(em, empresaId, tipoDte, hoy);
-    return manager ? ejecutar(manager) : this.dataSource.transaction(ejecutar);
+    return manager
+      ? this.ejecutor.ejecutarEn(manager, ejecutar)
+      : this.ejecutor.ejecutar(ejecutar);
   }
 
   private async asignarEn(
@@ -239,7 +242,7 @@ export class FoliosService {
 
   /** Cifra de una vez todos los CAF heredados con XML en claro. Devuelve cuántos migró. */
   async cifrarCafsHeredados(): Promise<number> {
-    return this.dataSource.transaction(async (em) => {
+    return this.ejecutor.ejecutar(async (em) => {
       const heredados = await em
         .createQueryBuilder(Caf, 'caf')
         .where('caf.xml IS NOT NULL')
@@ -256,10 +259,12 @@ export class FoliosService {
     tipoDte?: number,
   ): Promise<ResumenCaf[]> {
     const hoy = aFechaCalendario(new Date());
-    const cafs = await this.dataSource.getRepository(Caf).find({
-      where: tipoDte === undefined ? { empresaId } : { empresaId, tipoDte },
-      order: { tipoDte: 'ASC', fechaAutorizacion: 'ASC', folioDesde: 'ASC' },
-    });
+    const cafs = await this.ejecutor.ejecutar((em) =>
+      em.getRepository(Caf).find({
+        where: tipoDte === undefined ? { empresaId } : { empresaId, tipoDte },
+        order: { tipoDte: 'ASC', fechaAutorizacion: 'ASC', folioDesde: 'ASC' },
+      }),
+    );
     return cafs.map((c) => {
       const vencido = c.fechaVencimiento !== null && c.fechaVencimiento < hoy;
       return {

@@ -90,7 +90,6 @@ Recopiladas de los README y de la revisión del código.
 
 ### 2.3 Base de datos (`apps/api/src/database/README.md`)
 
-- RLS multiempresa (hoy el aislamiento depende de filtrar por `empresa_id`).
 - Retención legal de DTE y envíos (6 años, a verificar), purga y archivado de `envios.xml_envio` y `respuesta`.
 - Object storage para XML firmado, XML de envío y PDF (hoy `text` en la BD).
 - Cifrado de sobre con KMS/Vault y rotación de clave maestra.
@@ -134,7 +133,7 @@ Recopiladas de los README y de la revisión del código.
 |---|---|---|---|---|
 | R-01 | El SII rechaza la firma, el TED o el XML en certificación por detalles no cubiertos por el XSD (`KeyInfo`, espacios, canonización) | Alta | Alto | Prioridad 1: pruebas contra maullin/apicert con certificado y CAF reales; comparar con una implementación de referencia (LibreDTE, sólo lectura) |
 | R-02 | Cambios normativos 2026 (Res. 121/2026 por fases, campos de impuestos, Res. 144/2026) | Alta | Medio | XSD versionado; constructor extensible; seguimiento de novedades; considerar definición versionada de formato |
-| R-03 | Fuga de datos entre empresas por una consulta sin `empresa_id` | Media | Alto | RLS y rol sin `BYPASSRLS`; pruebas de aislamiento; revisión de repositorios |
+| R-03 | Fuga de datos entre empresas por una consulta sin `empresa_id` | Media | Alto | **Mitigado:** RLS forzada, rol `api_sii_app` sin `BYPASSRLS` y `test/rls.e2e-spec.ts` |
 | R-04 | Compromiso de `CERTIFICADOS_MASTER_KEY` o de la base expone todos los PFX | Baja | Crítico | KMS/Vault con cifrado de sobre; rotación; no registrar secretos; acceso mínimo |
 | R-05 | Huecos de folio por fallas entre la asignación y la persistencia | Media | Medio | Asignar el folio dentro de la transacción de emisión; política de anulación de folios ante el SII |
 | R-06 | CAF vencido o sin folios en medio de la operación | Media | Alto | Alertas por umbral y vencimiento; el servicio ya omite CAF vencidos y falla con `SinFoliosDisponiblesError` |
@@ -164,7 +163,7 @@ flowchart LR
 |---|---|---|---|
 | **0** | Decisiones de stack, alcance, multiempresa, hosting y quién gestiona la certificación | Hecha en lo técnico (ADR-001, ADR-002); hosting y responsable de certificación sin decidir | Decidir hosting, gestión de la certificación y alcance comercial de documentos |
 | **1** | `dte-core` + `sii-gateway` funcionando en certificación: factura 33, nota 61 y boleta 39 con TED, firma, envío y estados | **Parcial**: construcción, TED, firma, XSD, sobres y clientes listos y probados con mocks; sin prueba real | (a) Caso de uso de emisión que orqueste folios + `dte-core` + persistencia; (b) módulo Nest del gateway con firmador sobre el certificado de la empresa; (c) servicios de empresa, certificado y CAF; (d) primeras pruebas en maullin/apicert con certificado y CAF reales; (e) mapear estados y reparos a `documentos`/`envios` |
-| **2** | API pública (OpenAPI), PDF/PDF417, entrega digital, webhooks, backoffice mínimo de CAF y certificados | **Pendiente** (sólo el prefijo `/v1` y las tablas) | Endpoints `/v1`, autenticación por empresa, idempotencia, cola y worker (Redis/BullMQ), PDF con PDF417, entrega digital, webhooks, documentación OpenAPI, RLS, cifrado de sobre, object storage |
+| **2** | API pública (OpenAPI), PDF/PDF417, entrega digital, webhooks, backoffice mínimo de CAF y certificados | **Pendiente** (sólo el prefijo `/v1` y las tablas) | Endpoints `/v1`, autenticación por empresa, idempotencia, cola y worker (Redis/BullMQ), PDF con PDF417, entrega digital, webhooks, documentación OpenAPI, cifrado de sobre, object storage |
 | **3** | Certificación SII de la primera empresa (DTE y boleta en paralelo) | **Pendiente** | Set de pruebas, simulación, intercambio, muestras impresas, declaración de cumplimiento; sitio de consulta de boletas |
 | **4** | Integración SAP B1: worker Service Layer, luego add-on UI API | **Pendiente** | Diseño de mapeo B1 a DTE, UDFs, adjuntos, pruebas con base localizada Chile |
 | **5** | Guías con trazabilidad, exportación, intercambio, recepción de compras, aceptación y reclamo | **Pendiente** | Res. 144/2026, tipos 110/111/112/43/46, buzón de intercambio, REGISTRORECLAMODTE |
@@ -178,7 +177,7 @@ El `README.md` fija como siguiente hito probar contra la certificación real. An
 3. Servicios de alta de empresa, certificado y CAF (con validación del CAF por `parsearCaf`).
 4. Script de smoke test contra maullin/apicert (factura 33 y boleta 39) y lectura de estados.
 5. Pipeline de CI (lint, tipos, pruebas unitarias, e2e con PostgreSQL, validación XSD).
-6. Endurecimiento previo a exponer la API: RLS, TLS verificado a PostgreSQL, política de logs sin secretos.
+6. Endurecimiento previo a exponer la API: TLS verificado a PostgreSQL, política de logs sin secretos.
 
 ## 5. Cómo reproducir los números
 
