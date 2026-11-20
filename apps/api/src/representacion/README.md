@@ -8,6 +8,14 @@ Representación impresa de DTE y boletas (PDF con timbre PDF417). Dominio puro: 
 | `datos-impresion.ts` | `extraerDatosImpresion(xml, indice?)`: parsea un `<DTE>` (suelto o dentro de un sobre; string o Buffer con su encoding declarado) y devuelve el modelo a imprimir, con el nombre del documento en palabras y el TED crudo. |
 | `generar-pdf.ts` | `generarPdf(xml, { formato, unidadSii, resolucion, cedible, logo, urlVerificacion })` con pdfkit (Helvetica estándar, Latin-1: tildes y ñ). `admiteCedible(tipo, indTraslado)`. |
 
+## Opciones por empresa
+
+`DocumentosService.pdfDe` completa `unidadSii`, `logo` y `urlVerificacion` desde la empresa (columnas `unidad_sii`, `logo`/`logo_tipo`, `url_verificacion`; migración `OpcionesPdfEmpresa`). Lógica pura en `src/empresas/opciones-pdf.ts`.
+
+- **Unidad del SII**: `PATCH /v1/empresas/:rut` con `unidadSii` (se guarda en mayúsculas, sin espacios sobrantes; `null` la borra). Se imprime `S.I.I. - <unidad>`.
+- **URL de verificación**: `urlVerificacion` es una plantilla http/https con los marcadores opcionales `{id}`, `{tipo}`, `{folio}` y `{rutEmisor}` (valores URL-encoded al generar). Hoy el PDF la imprime bajo "Verifique documento" en el bloque del timbre.
+- **Logo**: `PUT /v1/empresas/:rut/logo` (multipart `archivo`, PNG o JPEG verificado por firma de bytes, máx. 300 KB, 204), `GET` (imagen con su content-type, 404 si no hay) y `DELETE` (204). La columna `logo` es `select: false`: el JSON de la empresa solo expone `tieneLogo`. Si PDFKit no puede incrustar la imagen (p. ej. PNG corrupto con firma válida) el PDF responde 422 `LOGO_INVALIDO`.
+
 ## Parámetros del PDF417 (Instructivo de Emisión DTE, Anexo 2, A.2.5)
 
 Byte Compaction (`binarytext`), ECL 5, no truncado, 15 columnas, X dim 0,6 pt (8,3 mils; mínimo 6,7), fila 3:1 (`rowmult: 3`), PNG a 4 px por módulo (480 dpi impreso). Tamaño típico con un CAF real (TED de ~800 bytes): ~7 x 2,5 cm (recomendado máx. 3 x 9; manual: mín. 2 x 5, máx. 4 x 9). Zona de silencio de 0,25" la deja el layout. Si el TED supera ~925 codewords el generador falla (los CAF de `dte-core/testing` usan RSA 2048 y no caben; los reales usan RSA 512/1024).

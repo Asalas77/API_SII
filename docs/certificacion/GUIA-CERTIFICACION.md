@@ -66,6 +66,23 @@ Estados de envío finales: EPR, RPR, RCH, RCO, RFR, RSC, RCT, RPT, VOF. En bolet
 
 `GET $B/documentos/<id>/pdf?cedible=true` (carta, con timbre PDF417; `formato=termica80` para boletas). Genere una muestra por tipo de documento (33, 34, 52, 56, 61, 39, 41), imprímalas y envíelas según el Manual de Muestras Impresas (`docs/referencias-sii/pdf/SII_Manual_Muestras_Impresas.pdf`). Complete `nroResolucionSii` y `fechaResolucionSii` para que la leyenda sea correcta.
 
+Configure antes la unidad del SII, el logo y (opcional) la URL de verificación; se aplican a todos los PDF de la empresa:
+
+```bash
+# Unidad del SII (se imprime "S.I.I. - SANTIAGO CENTRO"; null la borra)
+curl -H "$K" -H "Content-Type: application/json" -X PATCH $B/empresas/76086428-5   -d '{"unidadSii":"Santiago Centro"}'
+
+# URL de verificación (opcional; marcadores {id} {tipo} {folio} {rutEmisor}, http/https)
+curl -H "$K" -H "Content-Type: application/json" -X PATCH $B/empresas/76086428-5   -d '{"urlVerificacion":"https://mi-dominio.cl/verificar/{rutEmisor}/{tipo}/{folio}"}'
+
+# Logo: PNG o JPEG, máx. 300 KB (se valida por contenido, no por extensión)
+curl -H "$K" -X PUT $B/empresas/76086428-5/logo -F "archivo=@logo.png"
+curl -H "$K" $B/empresas/76086428-5/logo -o logo-guardado.png   # verificar
+curl -H "$K" -X DELETE $B/empresas/76086428-5/logo               # quitar
+```
+
+`GET $B/empresas/76086428-5` informa `unidadSii`, `urlVerificacion` y `tieneLogo`.
+
 ## 7. Qué sigue
 
 1. **Libros IEV/IECV** del set (ventas y compras): pendiente de implementar.

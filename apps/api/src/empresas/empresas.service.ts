@@ -7,6 +7,7 @@ import { EjecutorEmpresa } from '../database/ejecutor-empresa.js';
 import { separarRut } from '../dte-core/index.js';
 import type { ActualizarEmpresaDto, CrearEmpresaDto } from './empresas.dto.js';
 import { Empresa } from './entities/empresa.entity.js';
+import { detectarImagen, LIMITE_LOGO_BYTES, normalizarUnidadSii, type TipoImagen } from './opciones-pdf.js';
 
 export interface EmpresaRespuesta {
   id: string;
@@ -24,6 +25,9 @@ export interface EmpresaRespuesta {
   fechaResolucionSii: string | null;
   ambienteSii: string;
   proveedorSoftware: { rut: string } | null;
+  unidadSii: string | null;
+  urlVerificacion: string | null;
+  tieneLogo: boolean;
   activa: boolean;
   creadoEn: Date;
 }
@@ -48,6 +52,9 @@ export function aRespuestaEmpresa(e: Empresa): EmpresaRespuesta {
       e.rutProveedorSoftware !== null
         ? { rut: `${e.rutProveedorSoftware}-${e.dvProveedorSoftware}` }
         : null,
+    unidadSii: e.unidadSii,
+    urlVerificacion: e.urlVerificacion,
+    tieneLogo: e.logoTipo !== null,
     activa: e.activa,
     creadoEn: e.creadoEn,
   };
@@ -135,6 +142,8 @@ export class EmpresasService {
       ambienteSii: dto.ambienteSii ?? 'certificacion',
       rutProveedorSoftware: null,
       dvProveedorSoftware: null,
+      unidadSii: normalizarUnidadSii(dto.unidadSii),
+      urlVerificacion: dto.urlVerificacion ?? null,
       activa: true,
     };
     if (dto.proveedorSoftware) {
@@ -185,8 +194,9 @@ export class EmpresasService {
         );
       }
     }
-    const { proveedorSoftware, ...resto } = dto;
+    const { proveedorSoftware, unidadSii, ...resto } = dto;
     Object.assign(empresa, resto);
+    if (unidadSii !== undefined) empresa.unidadSii = normalizarUnidadSii(unidadSii);
     if (proveedorSoftware !== undefined) {
       if (proveedorSoftware === null) {
         empresa.rutProveedorSoftware = null;
@@ -198,5 +208,61 @@ export class EmpresasService {
       }
     }
     return this.ejecutor.ejecutar((em) => em.getRepository(Empresa).save(empresa));
+  }
+
+  /** Logo de la empresa (columna `select: false`, por eso se pide aparte); `null` si no tiene. */
+  async obtenerLogo(empresaId: string): Promise<{ buffer: Buffer; tipo: TipoImagen } | null> {
+    const e = await this.ejecutor.ejecutar((em) =>
+      em
+        .getRepository(Empresa)
+        .createQueryBuilder('e')
+        .addSelect('e.logo')
+        .where('e.id = :empresaId', { empresaId })
+        .getOne(),
+    );
+    if (!e?.logo || !e.logoTipo) return null;
+    return { buffer: e.logo, tipo: e.logoTipo as TipoImagen };
+  }
+
+  async obtenerLogoPorRut(rut: string): Promise<{ buffer: Buffer; tipo: TipoImagen }> {
+    const empresa = await this.obtenerPorRut(rut);
+    const logo = await this.obtenerLogo(empresa.id);
+    if (!logo) throw new ProblemaHttp(404, 'NO_ENCONTRADO', 'No encontrado', `La empresa ${rut} no tiene logo`);
+    return logo;
+  }
+
+  /** Guarda el logo tras verificar su firma de bytes (PNG o JPEG) y su tamaño. */
+  async guardarLogo(rut: string, buffer: Buffer): Promise<void> {
+    if (buffer.length === 0) {
+      throw new ProblemaHttp(400, 'VALIDACION', 'Logo inválido', 'El archivo está vacío');
+    }
+    if (buffer.length > LIMITE_LOGO_BYTES) {
+      throw new ProblemaHttp(
+        400,
+        'VALIDACION',
+        'Logo demasiado grande',
+        `El logo pesa ${buffer.length} bytes; el máximo es ${LIMITE_LOGO_BYTES} (300 KB)`,
+      );
+    }
+    const tipo = detectarImagen(buffer);
+    if (!tipo) {
+      throw new ProblemaHttp(
+        400,
+        'VALIDACION',
+        'Logo inválido',
+        'El archivo no es una imagen PNG ni JPEG (se verifica por contenido, no por extensión)',
+      );
+    }
+    const empresa = await this.obtenerPorRut(rut);
+    await this.ejecutor.ejecutar((em) =>
+      em.getRepository(Empresa).update({ id: empresa.id }, { logo: buffer, logoTipo: tipo }),
+    );
+  }
+
+  async eliminarLogo(rut: string): Promise<void> {
+    const empresa = await this.obtenerPorRut(rut);
+    await this.ejecutor.ejecutar((em) =>
+      em.getRepository(Empresa).update({ id: empresa.id }, { logo: null, logoTipo: null }),
+    );
   }
 }

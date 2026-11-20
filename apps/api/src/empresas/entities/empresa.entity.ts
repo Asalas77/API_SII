@@ -87,6 +87,22 @@ export class Empresa {
   })
   ambienteSii: AmbienteSii;
 
+  /** Unidad del SII (p. ej. `SANTIAGO CENTRO`), en mayúsculas; se imprime como `S.I.I. - <unidad>`. */
+  @Column({ name: 'unidad_sii', type: 'varchar', length: 80, nullable: true })
+  unidadSii: string | null;
+
+  /** Plantilla de URL de verificación; admite `{id}`, `{tipo}`, `{folio}` y `{rutEmisor}`. */
+  @Column({ name: 'url_verificacion', type: 'varchar', length: 300, nullable: true })
+  urlVerificacion: string | null;
+
+  /** Logo PNG/JPEG. No se carga en las consultas normales (`select: false`); ver `EmpresasService.obtenerLogo`. */
+  @Column({ type: 'bytea', nullable: true, select: false })
+  logo: Buffer | null;
+
+  /** `image/png` o `image/jpeg`; no nulo si y solo si hay logo (sirve para `tieneLogo`). */
+  @Column({ name: 'logo_tipo', type: 'varchar', length: 20, nullable: true })
+  logoTipo: string | null;
+
   @Column({ type: 'boolean', default: true })
   activa: boolean;
 

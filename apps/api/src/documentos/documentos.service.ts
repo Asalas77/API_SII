@@ -16,6 +16,7 @@ import {
 } from '../dte-core/index.js';
 import type { Empresa } from '../empresas/entities/empresa.entity.js';
 import { EmpresasService, esViolacionUnica } from '../empresas/empresas.service.js';
+import { resolverUrlVerificacion } from '../empresas/opciones-pdf.js';
 import { FoliosService } from '../folios/folios.service.js';
 import { generarPdf } from '../representacion/index.js';
 import { SiiClienteFactory } from '../sii/sii-cliente.factory.js';
@@ -307,14 +308,45 @@ export class DocumentosService {
     empresa: Empresa,
     opciones: PdfQuery,
   ): Promise<{ buffer: Buffer; nombre: string }> {
-    const buffer = await generarPdf(documento.xmlFirmado, {
-      formato: opciones.formato,
-      cedible: opciones.cedible,
-      resolucion: {
-        numero: empresa.nroResolucionSii ?? 0,
-        fecha: empresa.fechaResolucionSii ?? documento.fechaEmision,
-      },
-    });
+    const logo = empresa.logoTipo ? await this.empresas.obtenerLogo(empresa.id) : null;
+    const urlVerificacion = empresa.urlVerificacion
+      ? resolverUrlVerificacion(empresa.urlVerificacion, {
+          id: documento.id,
+          tipo: documento.tipoDte,
+          folio: documento.folio,
+          rutEmisor: `${empresa.rut}-${empresa.dv}`,
+        })
+      : undefined;
+    const generar = (conLogo: Buffer | undefined) =>
+      generarPdf(documento.xmlFirmado, {
+        formato: opciones.formato,
+        cedible: opciones.cedible,
+        unidadSii: empresa.unidadSii ?? undefined,
+        logo: conLogo,
+        urlVerificacion,
+        resolucion: {
+          numero: empresa.nroResolucionSii ?? 0,
+          fecha: empresa.fechaResolucionSii ?? documento.fechaEmision,
+        },
+      });
+    let buffer: Buffer;
+    try {
+      buffer = await generar(logo?.buffer);
+    } catch (e) {
+      if (!logo) throw e;
+      // Si falla con logo, se prueba sin él para distinguir un logo corrupto de otro problema.
+      try {
+        await generar(undefined);
+      } catch {
+        throw e;
+      }
+      throw new ProblemaHttp(
+        422,
+        'LOGO_INVALIDO',
+        'Logo inválido',
+        `PDFKit no pudo incrustar el logo de la empresa (${logo.tipo}): ${(e as Error).message}. Suba otro con PUT /v1/empresas/:rut/logo o elimínelo con DELETE.`,
+      );
+    }
     return {
       buffer,
       nombre: `DTE_${documento.tipoDte}_${documento.folio}.pdf`,

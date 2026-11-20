@@ -13,7 +13,7 @@ empresas 1──* envios
 
 | Tabla | Descripción |
 |---|---|
-| `empresas` | Emisor (tenant). RUT único, giro, ACTECOs (`int[]`), resolución SII, `ambiente_sii` (`certificacion`/`produccion`). |
+| `empresas` | Emisor (tenant). RUT único, giro, ACTECOs (`int[]`), resolución SII, `ambiente_sii` (`certificacion`/`produccion`), opciones del PDF (`unidad_sii`, `url_verificacion`, `logo` bytea + `logo_tipo`). |
 | `certificados` | PFX y clave **cifrados** (`bytea`, AES-256-GCM vía `CifradoService`), vigencia, firmante. Índice `(empresa_id, activo)`. |
 | `cafs` | CAF por tipo de DTE: rango, `folio_siguiente` (cursor), vencimiento, XML completo, `agotado`/`anulado`. Único `(empresa_id, tipo_dte, folio_desde)`. |
 | `documentos` | DTE emitido: folio, receptor, montos (`bigint`), `estado`, `track_id`, XML firmado, TED, `reparos` (jsonb), `clave_idempotencia`. Único `(empresa_id, tipo_dte, folio)` y único parcial `(empresa_id, clave_idempotencia)` cuando no es null. |

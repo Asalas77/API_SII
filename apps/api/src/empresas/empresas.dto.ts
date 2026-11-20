@@ -1,6 +1,7 @@
 import Joi from 'joi';
 import { fechaSchema, rutSchema } from '../comun/joi.js';
 import type { AmbienteSii } from './entities/empresa.entity.js';
+import { validarPlantillaUrl } from './opciones-pdf.js';
 
 export interface CrearEmpresaDto {
   rut: string;
@@ -17,6 +18,8 @@ export interface CrearEmpresaDto {
   fechaResolucionSii?: string;
   ambienteSii?: AmbienteSii;
   proveedorSoftware?: { rut: string } | null;
+  unidadSii?: string | null;
+  urlVerificacion?: string | null;
 }
 
 export type ActualizarEmpresaDto = Partial<Omit<CrearEmpresaDto, 'rut'>>;
@@ -38,6 +41,15 @@ const campos = {
   fechaResolucionSii: fechaSchema.allow(null),
   ambienteSii: Joi.string().valid('certificacion', 'produccion'),
   proveedorSoftware: Joi.object({ rut: rutSchema.required() }).allow(null),
+  unidadSii: Joi.string().trim().max(80).allow(null),
+  urlVerificacion: Joi.string()
+    .trim()
+    .max(300)
+    .custom((valor: string, helpers) => {
+      const motivo = validarPlantillaUrl(valor);
+      return motivo ? helpers.message({ custom: `{{#label}}: ${motivo}` }) : valor;
+    })
+    .allow(null),
 };
 
 export const crearEmpresaSchema = Joi.object<CrearEmpresaDto>({
@@ -55,6 +67,8 @@ export const crearEmpresaSchema = Joi.object<CrearEmpresaDto>({
   fechaResolucionSii: campos.fechaResolucionSii,
   ambienteSii: campos.ambienteSii,
   proveedorSoftware: campos.proveedorSoftware,
+  unidadSii: campos.unidadSii,
+  urlVerificacion: campos.urlVerificacion,
 });
 
 export const actualizarEmpresaSchema = Joi.object<ActualizarEmpresaDto>(
