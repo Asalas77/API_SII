@@ -119,6 +119,7 @@ export class ProblemFilter implements ExceptionFilter {
         `${req.method} ${req.url}: ${exception instanceof Error ? (exception.stack ?? exception.message) : String(exception)}`,
       );
     }
+    if (p.status === 401) res.setHeader('WWW-Authenticate', 'Bearer');
     res
       .status(p.status)
       .type('application/problem+json')

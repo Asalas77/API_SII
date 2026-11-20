@@ -24,3 +24,5 @@ Validación con esquemas Joi (Standard Schema) vía `@Body({ schema })`. Errores
 ## PENDIENTE CRÍTICO antes de producción
 
 **No hay autenticación ni autorización de clientes**: cualquiera con acceso a la red puede crear empresas, subir certificados y emitir. Falta API key por empresa (`docs/diseno/08-seguridad.md`), aislamiento por empresa en `GET /documentos/:id` y `/envios/:id`, límites de tasa, y RLS. Tampoco hay listado paginado de documentos ni webhooks.
+
+Autenticación: todos los endpoints (salvo GET / y /health) exigen API key; ver src/auth/README.md.

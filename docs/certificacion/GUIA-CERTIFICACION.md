@@ -1,6 +1,6 @@
 # Guía de certificación ante el SII (paso a paso)
 
-Todo se ejecuta desde `apps/api/` con Postgres arriba y las migraciones aplicadas (`npm run migration:run`). La API corre con `npm run start:dev` (puerto 3000; los ejemplos usan `$B=http://localhost:3000/v1`). Estrategia general de pruebas: `docs/diseno/10-estrategia-de-pruebas.md`. **La API no tiene autenticación todavía: úsela solo en una máquina de desarrollo/red de confianza.**
+Todo se ejecuta desde `apps/api/` con Postgres arriba y las migraciones aplicadas (`npm run migration:run`). La API corre con `npm run start:dev` (puerto 3000; los ejemplos usan `$B=http://localhost:3000/v1`). Estrategia general de pruebas: `docs/diseno/10-estrategia-de-pruebas.md`. Todas las llamadas requieren una API key: defina `API_ADMIN_KEY` en `apps/api/.env` (`openssl rand -base64 48`) y en la consola `K="Authorization: Bearer <su clave>"`. Los ejemplos `curl` usan `-H "$K"`.
 
 ## 1. Prerrequisitos en el SII (fuera de esta API)
 
@@ -12,7 +12,7 @@ Todo se ejecuta desde `apps/api/` con Postgres arriba y las migraciones aplicada
 ## 2. Configurar la empresa (ambiente certificación)
 
 ```bash
-curl -X POST $B/empresas -H 'content-type: application/json' -d '{
+curl -H "$K" -X POST $B/empresas -H 'content-type: application/json' -d '{
   "rut":"76086428-5","razonSocial":"MI EMPRESA SPA","giro":"Servicios informáticos",
   "actecos":[620200],"direccion":"Av. Providencia 1234","comuna":"Providencia","ciudad":"Santiago",
   "nroResolucionSii":0,"fechaResolucionSii":"2026-01-15","ambienteSii":"certificacion"}'
@@ -23,9 +23,9 @@ curl -X POST $B/empresas -H 'content-type: application/json' -d '{
 ## 3. Cargar certificado y CAF
 
 ```bash
-curl -X POST $B/empresas/76086428-5/certificados -F archivo=@firmante.pfx -F password='********'
-curl -X POST $B/empresas/76086428-5/cafs -F archivo=@FoliosSII7608642853320261119.xml   # uno por tipo
-curl $B/empresas/76086428-5/folios
+curl -H "$K" -X POST $B/empresas/76086428-5/certificados -F archivo=@firmante.pfx -F password='********'
+curl -H "$K" -X POST $B/empresas/76086428-5/cafs -F archivo=@FoliosSII7608642853320261119.xml   # uno por tipo
+curl -H "$K" $B/empresas/76086428-5/folios
 ```
 
 El PFX y su contraseña quedan cifrados (AES-256-GCM con `CERTIFICADOS_MASTER_KEY`; use una clave propia, no la de desarrollo). Si el certificado no trae el RUT del titular en el SAN, agregue `-F rutFirmante=12345678-5`. El CAF se cifra en reposo y se rechaza si su RUT no es el de la empresa. Los CAF de certificación del SII son reales (firmados por el SII): los CAF de prueba del repositorio no sirven ante el SII.
@@ -55,9 +55,9 @@ Emite un DTE por caso (con `SET` / `CASO nnnn-n` como primera referencia), arma 
 El SII tarda unos minutos (~10) en procesar.
 
 ```bash
-curl $B/empresas/76086428-5/envios                 # lista con ids
-curl -X POST $B/envios/<id-o-trackid>/consultar    # consulta al SII y actualiza envío y documentos
-curl $B/documentos/<id>                            # estado: aceptado | aceptado_con_reparos | rechazado
+curl -H "$K" $B/empresas/76086428-5/envios                 # lista con ids
+curl -H "$K" -X POST $B/envios/<id-o-trackid>/consultar    # consulta al SII y actualiza envío y documentos
+curl -H "$K" $B/documentos/<id>                            # estado: aceptado | aceptado_con_reparos | rechazado
 ```
 
 Estados de envío finales: EPR, RPR, RCH, RCO, RFR, RSC, RCT, RPT, VOF. En boletas se obtiene el detalle por documento (reparos en `documentos.reparos`); en DTE el SII solo informa conteos por tipo (un resultado mixto queda `enviado`: revíselo en el portal de certificación). Cuando el set esté aceptado, avise en el sitio del SII ("reportar set de pruebas para revisión").
@@ -75,4 +75,4 @@ Estados de envío finales: EPR, RPR, RCH, RCO, RFR, RSC, RCT, RPT, VOF. En bolet
 
 ## 8. Antes de producción
 
-Autenticación y autorización por empresa (hoy no existe), clave maestra propia y rotación, almacenamiento de XML en object storage, RLS multiempresa, respaldos y monitoreo (ver `docs/diseno/08-seguridad.md` y `11-operacion-y-despliegue.md`). Verifique contra maullin/apicert los formatos de respuesta reales: los clientes se probaron solo con respuestas simuladas.
+Claves API propias por integración (no usar la clave de administración en producción), clave maestra propia y rotación, almacenamiento de XML en object storage, RLS multiempresa, respaldos y monitoreo (ver `docs/diseno/08-seguridad.md` y `11-operacion-y-despliegue.md`). Verifique contra maullin/apicert los formatos de respuesta reales: los clientes se probaron solo con respuestas simuladas.

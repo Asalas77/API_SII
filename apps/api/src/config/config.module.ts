@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule as NestConfigModule } from '@nestjs/config';
 import {
   appConfig,
+  authConfig,
   databaseConfig,
   envValidationSchema,
   seguridadConfig,
@@ -14,7 +15,7 @@ import {
       isGlobal: true,
       validationSchema: envValidationSchema,
       envFilePath: ['.env', '.env.local'],
-      load: [appConfig, databaseConfig, siiConfig, seguridadConfig],
+      load: [appConfig, databaseConfig, siiConfig, seguridadConfig, authConfig],
     }),
   ],
 })

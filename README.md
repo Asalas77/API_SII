@@ -60,7 +60,7 @@ cd apps/api && npm run start:dev
 
 - `GET http://localhost:3000/` → nombre, versión y ambiente SII configurado.
 - `GET http://localhost:3000/health` → estado de la base de datos.
-- Los recursos de negocio vivirán bajo el prefijo `/v1`.
+- Los recursos de negocio están bajo `/v1` y exigen una API key (`Authorization: Bearer <clave>`). Define `API_ADMIN_KEY` en `.env` para crear empresas y claves; ver `apps/api/src/auth/README.md`.
 
 ## Pruebas y calidad
 

@@ -3,6 +3,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, type EntityManager, Repository } from 'typeorm';
 import { fechaSantiago } from '../comun/fechas.js';
+import { type AccesoEmpresas, asegurarRecursoDeEmpresa } from '../auth/principal.js';
 import { documentoInvalido, noEncontrado, ProblemaHttp } from '../comun/problema.js';
 import {
   aIso88591,
@@ -264,18 +265,31 @@ export class DocumentosService {
     return { documento: previo, repetido: true };
   }
 
-  async obtener(id: string): Promise<{ documento: Documento; empresa: Empresa }> {
+  /**
+   * Documento por id. Si pertenece a una empresa fuera del alcance de `acceso` responde 404 (igual
+   * que si no existiera) para no revelar su existencia.
+   */
+  async obtener(
+    id: string,
+    acceso: AccesoEmpresas,
+  ): Promise<{ documento: Documento; empresa: Empresa }> {
     const documento = await this.documentos.findOne({
       where: { id },
       relations: { empresa: true },
     });
     if (!documento?.empresa) throw noEncontrado('El documento', id);
+    asegurarRecursoDeEmpresa(
+      acceso,
+      `${documento.empresa.rut}-${documento.empresa.dv}`,
+      'El documento',
+      id,
+    );
     return { documento, empresa: documento.empresa };
   }
 
   /** XML del DTE firmado en ISO-8859-1 (con declaración). */
-  async xml(id: string): Promise<{ buffer: Buffer; nombre: string }> {
-    const { documento } = await this.obtener(id);
+  async xml(id: string, acceso: AccesoEmpresas): Promise<{ buffer: Buffer; nombre: string }> {
+    const { documento } = await this.obtener(id, acceso);
     return {
       buffer: aIso88591(documento.xmlFirmado),
       nombre: `DTE_${documento.tipoDte}_${documento.folio}.xml`,
@@ -283,8 +297,12 @@ export class DocumentosService {
   }
 
   /** Representación impresa (PDF con timbre PDF417). */
-  async pdf(id: string, opciones: PdfQuery): Promise<{ buffer: Buffer; nombre: string }> {
-    const { documento, empresa } = await this.obtener(id);
+  async pdf(
+    id: string,
+    opciones: PdfQuery,
+    acceso: AccesoEmpresas,
+  ): Promise<{ buffer: Buffer; nombre: string }> {
+    const { documento, empresa } = await this.obtener(id, acceso);
     return this.pdfDe(documento, empresa, opciones);
   }
 

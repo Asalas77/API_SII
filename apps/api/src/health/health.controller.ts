@@ -1,4 +1,5 @@
 import { Controller, Get } from '@nestjs/common';
+import { Publico } from '../auth/index.js';
 import {
   HealthCheck,
   HealthCheckService,
@@ -13,6 +14,7 @@ export class HealthController {
   ) {}
 
   @Get()
+  @Publico()
   @HealthCheck()
   check() {
     return this.health.check([() => this.db.pingCheck('database')]);

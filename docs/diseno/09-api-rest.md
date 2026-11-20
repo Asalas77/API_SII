@@ -7,7 +7,7 @@ Este documento separa con claridad lo **implementado hoy** de lo **planificado**
 Fuente: `apps/api/src/main.ts`, `app.controller.ts`, `app.service.ts`, `health/health.controller.ts`.
 
 - Prefijo global `v1` con **exclusión** de `/` y `/health` (`app.setGlobalPrefix('v1', { exclude: ['health', '/'] })`). Hoy no existe ningún recurso bajo `/v1`.
-- Puerto: `PORT` (por defecto 3000). Sin autenticación, sin CORS configurado, sin validación de DTO global, sin Swagger/OpenAPI propio.
+- Puerto: `PORT` (por defecto 3000). API key obligatoria salvo `GET /` y `GET /health` (ver `08-seguridad.md` §4.8), sin CORS configurado, sin validación de DTO global, sin Swagger/OpenAPI propio.
 - Cierre ordenado habilitado (`enableShutdownHooks`).
 
 ### 1.1 `GET /`
@@ -67,7 +67,7 @@ Con la base de datos caída, Terminus responde `503 Service Unavailable`:
 |---|---|
 | Base | `/v1`; JSON UTF-8 (`application/json`). Los XML se descargan con `application/xml; charset=ISO-8859-1` |
 | Identificación de empresa | `{rut}` en la ruta con formato `76086428-5` (sin puntos). Internamente se resuelve a `empresas.id` (UUID). Recursos hijos (`documentos`, `envios`) se consultan por UUID y se filtran por la empresa de la credencial |
-| Autenticación | `Authorization: Bearer <api-key>`; cada clave pertenece a una empresa (o a un integrador con varias). Ver `08-seguridad.md` |
+| Autenticación (**implementado**) | `Authorization: Bearer <api-key>` o `X-API-Key`; cada clave tiene permisos y una lista de empresas (o todas). Gestión: `POST/GET /v1/api-keys`, `DELETE /v1/api-keys/:id`. Ver `08-seguridad.md` §4.8 |
 | Fechas | Calendario: `yyyy-mm-dd`. Instantes: ISO 8601 UTC con `Z` (`timestamptz`) |
 | Montos | Enteros en CLP (los `bigint` de BD se exponen como `number`) |
 | Identificadores | UUID v4 (`gen_random_uuid()`) |
@@ -392,4 +392,4 @@ Entrega "al menos una vez": reintentos con backoff exponencial ante respuestas n
 | `GET /`, `GET /health` | Implementado |
 | Prefijo `/v1` | Implementado (configuración); sin recursos |
 | Empresas, certificados, CAF/folios, documentos, envíos, webhooks | Planificado. Existe el modelo de datos y `FoliosService` (sin controlador), y la lógica de `dte-core` y `sii-gateway` |
-| Autenticación, idempotencia, paginación, errores `problem+json`, OpenAPI propio | Planificado |
+| Idempotencia, paginación, errores `problem+json`, OpenAPI propio | Planificado |

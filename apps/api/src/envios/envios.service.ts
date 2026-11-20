@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, In, Repository, type EntityManager } from 'typeorm';
+import type { AccesoEmpresas } from '../auth/principal.js';
 import { Documento } from '../documentos/entities/documento.entity.js';
 import { noEncontrado, ProblemaHttp } from '../comun/problema.js';
 import {
@@ -305,12 +306,17 @@ export class EnviosService {
     return docs;
   }
 
-  /** Envío por UUID o por track id (numérico). */
-  async obtener(idOTrack: string): Promise<EnvioRespuesta> {
+  /**
+   * Envío por UUID o por track id (numérico), restringido a las empresas de `acceso`: uno ajeno
+   * responde 404, igual que si no existiera.
+   */
+  async obtener(idOTrack: string, acceso: AccesoEmpresas): Promise<EnvioRespuesta> {
+    const permitidas = await this.empresas.idsPermitidos(acceso);
+    const filtroEmpresa = permitidas === null ? {} : { empresaId: In(permitidas) };
     const envio = UUID.test(idOTrack)
-      ? await this.envios.findOne({ where: { id: idOTrack } })
+      ? await this.envios.findOne({ where: { id: idOTrack, ...filtroEmpresa } })
       : await this.envios.findOne({
-          where: { trackId: idOTrack },
+          where: { trackId: idOTrack, ...filtroEmpresa },
           order: { creadoEn: 'DESC' },
         });
     if (!envio) throw noEncontrado('El envío', idOTrack);
@@ -328,8 +334,8 @@ export class EnviosService {
   }
 
   /** Consulta el estado al SII y actualiza el envío y sus documentos. */
-  async consultar(idOTrack: string): Promise<EnvioRespuesta> {
-    const actual = await this.obtener(idOTrack);
+  async consultar(idOTrack: string, acceso: AccesoEmpresas): Promise<EnvioRespuesta> {
+    const actual = await this.obtener(idOTrack, acceso);
     const envio = await this.envios.findOneOrFail({ where: { id: actual.id } });
     if (!envio.trackId) {
       throw estadoInvalido('El envío no tiene track id (no llegó a enviarse al SII)');

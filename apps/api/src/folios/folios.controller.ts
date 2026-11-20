@@ -10,6 +10,7 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import Joi from 'joi';
+import { PERMISOS, RequierePermisos } from '../auth/index.js';
 import { type ArchivoSubido, LIMITE_ARCHIVO_BYTES } from '../comun/archivo.js';
 import { ProblemaHttp } from '../comun/problema.js';
 import {
@@ -48,6 +49,7 @@ export class FoliosController {
    * clave privada corresponde a la pública, que el RUT es el de la empresa y lo registra cifrado.
    */
   @Post('cafs')
+  @RequierePermisos(PERMISOS.CAFS_GESTIONAR)
   @UseInterceptors(
     FileInterceptor('archivo', { limits: { fileSize: LIMITE_ARCHIVO_BYTES } }),
   )
@@ -110,6 +112,7 @@ export class FoliosController {
   }
 
   @Get('folios')
+  @RequierePermisos(PERMISOS.FOLIOS_LEER)
   async folios_(
     @Param('rut') rut: string,
     @Query({ schema: foliosQuerySchema }) query: FoliosQuery,

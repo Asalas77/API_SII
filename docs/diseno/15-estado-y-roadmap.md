@@ -54,7 +54,7 @@ No se midió cobertura (existe `npm run test:cov`, sin ejecutar).
 | `dte-core`: CAF, TED, firma, XML/RUT/ISO-8859-1, XSD, PFX, totales, `construirDte`, sobres | Implementado | `apps/api/src/dte-core/` |
 | Tipos soportados por el constructor: 33, 34, 39, 41, 52, 56, 61 | Implementado | `apps/api/src/dte-core/documento/tipos.ts` |
 | `sii-gateway`: cliente de boletas (semilla, token, envío, estados) y de DTE (semilla, token, upload, estados), caché de token, reintentos, errores | Implementado (sin cablear a Nest) | `apps/api/src/sii-gateway/` |
-| Caso de uso de emisión, endpoints `/v1/...`, autenticación | **No existe** | ningún controlador de negocio ni guard |
+| Caso de uso de emisión, endpoints `/v1/...`, autenticación | **Implementado** | API keys con permisos y aislamiento por empresa (`src/auth/`) |
 | Colas, worker, polling de estados | **No existe** | Redis sólo en `docker-compose.yml`; BullMQ ausente de `package.json` |
 | PDF, PDF417, entrega digital, webhooks | **No existe** | sin dependencias ni código |
 | Servicio de empresas y de certificados (alta, carga de PFX) | **No existe** | los módulos sólo registran las entidades |
@@ -178,7 +178,7 @@ El `README.md` fija como siguiente hito probar contra la certificación real. An
 3. Servicios de alta de empresa, certificado y CAF (con validación del CAF por `parsearCaf`).
 4. Script de smoke test contra maullin/apicert (factura 33 y boleta 39) y lectura de estados.
 5. Pipeline de CI (lint, tipos, pruebas unitarias, e2e con PostgreSQL, validación XSD).
-6. Endurecimiento previo a exponer la API: autenticación, RLS, TLS verificado a PostgreSQL, política de logs sin secretos.
+6. Endurecimiento previo a exponer la API: RLS, TLS verificado a PostgreSQL, política de logs sin secretos.
 
 ## 5. Cómo reproducir los números
 

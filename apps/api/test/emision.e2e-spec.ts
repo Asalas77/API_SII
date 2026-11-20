@@ -15,6 +15,7 @@ import { Caf } from '../src/folios/entities/caf.entity.js';
 import { SII_FETCH } from '../src/sii/tokens.js';
 import { generarCafRealista } from '../src/testing/caf-realista.js';
 import { crearSiiSimulado } from '../src/testing/sii-simulado.js';
+import { ADMIN_KEY, configurarAdminKey } from './helpers/auth.js';
 import { postgresDisponible, rutAleatorio } from './helpers/db.js';
 
 const hayDb = await postgresDisponible();
@@ -28,7 +29,8 @@ describe.skipIf(!hayDb)('Emisión y envío por la API /v1 (e2e, con DB)', () => 
   const sii = crearSiiSimulado();
   const rut = rutAleatorio((n) => calcularDv(n));
   const base = `/v1/empresas/${rut.texto}`;
-  const http = () => request(app.getHttpServer());
+  // Todas las peticiones llevan la clave de administración.
+  const http = () => request.agent(app.getHttpServer()).set('Authorization', `Bearer ${ADMIN_KEY}`);
 
   const factura = (extra: Record<string, unknown> = {}) => ({
     idDoc: { tipoDte: 33, formaPago: 1 },
@@ -61,6 +63,7 @@ describe.skipIf(!hayDb)('Emisión y envío por la API /v1 (e2e, con DB)', () => 
   }
 
   beforeAll(async () => {
+    configurarAdminKey();
     const modulo = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(SII_FETCH)
       .useValue(sii.fetch)

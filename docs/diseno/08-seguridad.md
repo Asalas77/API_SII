@@ -42,7 +42,7 @@ flowchart LR
     end
     KMS["Secretos: env hoy, KMS o Vault planificado"]
 
-    Cliente -->|"TLS, autenticacion planificada"| HTTP
+    Cliente -->|"TLS + API key"| HTTP
     HTTP --> Dominio
     Dominio --> Cifrado
     Cifrado --> PG
@@ -64,7 +64,7 @@ Fronteras principales:
 
 | Categoría | Amenaza | Activo | Mitigación implementada | Mitigación planificada |
 |---|---|---|---|---|
-| **S**poofing | Un cliente se hace pasar por otra empresa y emite en su nombre. | A1, A3, A5 | Ninguna (aún no hay API de negocio). | Autenticación de clientes por API key o OAuth2 client credentials, asociada a una o más `empresa_id`; RLS. |
+| **S**poofing | Un cliente se hace pasar por otra empresa y emite en su nombre. | A1, A3, A5 | **Implementado:** API keys (`src/auth/`) con hash SHA-256, permisos atómicos y lista de empresas; 403 en rutas `:rut` ajenas y 404 en recursos ajenos. | RLS como segunda barrera. |
 | **S**poofing | Un tercero se hace pasar por el SII (respuesta falsa). | A4 | HTTPS hacia hosts fijos y conocidos (`ambientes.ts`); TLS 1.2 como mínimo (ver 4.6). | Fijar certificado o CA del SII si procede; validar la forma de las respuestas. |
 | **T**ampering | Alteración del PFX o del CAF en base de datos. | A1, A3 | GCM autentica el blob del PFX: cualquier modificación hace fallar `descifrar` (`final()` lanza). | Cifrar también `cafs.xml`; hash de integridad de `documentos.xml_firmado`; auditoría. |
 | **T**ampering | Inyección de XPath en la referencia de firma para firmar otro nodo. | A5 | `idReferencia` validado con `^[A-Za-z_][\w.-]*$` antes de construir el XPath (`firma.ts`). | Mantener la regla en todo punto que arme XPath. |
@@ -160,12 +160,24 @@ legible y **conocida** (válida para Joi): **no debe usarse nunca fuera del desa
 `ON DELETE RESTRICT` en todas las FK, unicidad de folio y de idempotencia, y bloqueo pesimista de CAF (ver
 `04-modelo-de-datos.md` y `05-flujos.md`).
 
+## 4.8 Autenticación y autorización de clientes (implementado)
+
+Los clientes de la API son sistemas (worker de SAP B1, ERP), por eso se usan **API keys** y no usuarios con contraseña. Detalle en `apps/api/src/auth/README.md`.
+
+- Formato `sk_<test|live>_<prefijo hex>_<secreto base64url de 32 bytes>`; se muestra una sola vez. En la BD (`api_keys`) sólo se guarda el SHA-256 y el prefijo; comparación en tiempo constante.
+- Cabeceras `Authorization: Bearer <clave>` o `X-API-Key: <clave>`. 401 con `WWW-Authenticate: Bearer`, mismo mensaje para clave inexistente, revocada o expirada.
+- `API_ADMIN_KEY` (variable de entorno, ≥ 32 caracteres) concede todo: sirve para crear empresas y las primeras claves.
+- Guards globales fail-closed: `AuthGuard` autentica y `PermisosGuard` exige `@RequierePermisos(...)`; un endpoint sin permisos declarados se deniega. Sólo `GET /` y `GET /health` son `@Publico()`.
+- Permisos: `empresas.crear|leer|editar`, `certificados.gestionar`, `cafs.gestionar`, `folios.leer`, `documentos.emitir|leer`, `envios.crear|leer`, `api_keys.gestionar`.
+- Aislamiento: ruta con `:rut` fuera del alcance → 403; documento o envío de otra empresa → 404. Una clave no puede crear otra con más permisos o empresas que ella (anti-escalada).
+- Revocación inmediata (`DELETE /v1/api-keys/:id`), expiración opcional y `ultimo_uso_en`.
+- Pendiente: OAuth2/usuarios con JWT para un futuro backoffice, rate limiting por clave y auditoría de uso.
+
 ## 5. Controles planificados
 
 | Control | Descripción | Prioridad |
 |---|---|---|
 | Cifrar la clave del CAF | Separar `RSASK` de `cafs.xml` y cifrarla con `CifradoService` (o DEK de KMS). Hoy está en claro (A3). | Alta |
-| Autenticación de clientes de la API | API keys por cliente (hash en BD) u OAuth2 client credentials; cada credencial atada a una o más empresas; JWT con roles y permisos; separación de administración y emisión. | Alta (antes de exponer `/v1`) |
 | RLS en PostgreSQL | `ROW LEVEL SECURITY` en todas las tablas con `empresa_id`, políticas con `current_setting('app.empresa_id')` fijado por transacción, rol de aplicación sin `BYPASSRLS`. | Alta |
 | Cifrado de sobre (KMS/Vault) | Una clave de datos (DEK) por empresa, cifrada con una clave maestra del KMS; el blob ya tiene byte de versión para el cambio de formato. Reemplaza la clave maestra única en variable de entorno. | Alta |
 | Rotación | De la clave maestra (re-cifrado por lotes leyendo la versión del blob), del certificado de la empresa (`certificados.activo` y vigencia) y de los CAF (anulación y carga de uno nuevo). | Media |
@@ -219,7 +231,6 @@ Clave maestra y secretos de infraestructura:
 | Brecha | Riesgo | Referencia |
 |---|---|---|
 | `cafs.xml` guarda `RSASK` en claro. | Emisión fraudulenta ante fuga de la base. | 3, 5 |
-| Sin autenticación ni autorización (no hay API de negocio todavía). | Crítico al exponer `/v1`. | 5 |
 | Clave maestra única en variable de entorno; sin rotación. | Un compromiso descifra todo. | 4.1, 5 |
 | `rejectUnauthorized: false` en la conexión TLS a la base. | Intermediario activo. | 4.6 |
 | Aislamiento multiempresa sólo por convención de consulta (sin RLS). | Fuga entre empresas por error de programación. | 3, 5 |

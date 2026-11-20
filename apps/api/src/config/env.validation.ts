@@ -18,6 +18,12 @@ export const envValidationSchema = Joi.object({
     .valid('certificacion', 'produccion')
     .default('certificacion'),
 
+  // Clave de administración bootstrap: opcional, pero si se define debe tener ≥ 32 caracteres.
+  API_ADMIN_KEY: Joi.string().min(32).optional().messages({
+    'string.min':
+      'API_ADMIN_KEY debe tener al menos 32 caracteres (openssl rand -base64 48)',
+  }),
+
   // 32 bytes en base64.
   CERTIFICADOS_MASTER_KEY: Joi.string()
     .required()

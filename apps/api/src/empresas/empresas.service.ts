@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
+import { type AccesoEmpresas, normalizarRut } from '../auth/principal.js';
 import { InjectRepository } from '@nestjs/typeorm';
-import { type DeepPartial, QueryFailedError, Repository } from 'typeorm';
+import { type DeepPartial, In, QueryFailedError, Repository } from 'typeorm';
 import { Certificado } from '../certificados/entities/certificado.entity.js';
 import { noEncontrado, ProblemaHttp } from '../comun/problema.js';
 import { separarRut } from '../dte-core/index.js';
@@ -88,6 +89,23 @@ export class EmpresasService {
     const empresa = await this.empresas.findOne({ where: { rut: numero } });
     if (!empresa || empresa.dv !== dv) throw noEncontrado('La empresa', rut);
     return empresa;
+  }
+
+  /**
+   * Ids de las empresas a las que da acceso `acceso`; `null` si son todas (sin filtro). Sirve para
+   * acotar consultas de recursos que solo conocen `empresa_id`.
+   */
+  async idsPermitidos(acceso: AccesoEmpresas): Promise<string[] | null> {
+    if (acceso.todasLasEmpresas) return null;
+    const permitidos = new Set(acceso.empresas);
+    const numeros = [...permitidos]
+      .map((r) => Number.parseInt(r, 10))
+      .filter((n) => Number.isFinite(n));
+    if (numeros.length === 0) return [];
+    const filas = await this.empresas.find({ where: { rut: In(numeros) } });
+    return filas
+      .filter((e) => permitidos.has(normalizarRut(`${e.rut}-${e.dv}`) ?? ''))
+      .map((e) => e.id);
   }
 
   async obtenerPorId(id: string): Promise<Empresa> {

@@ -11,6 +11,7 @@ import {
   StreamableFile,
 } from '@nestjs/common';
 import type { Response } from 'express';
+import { PERMISOS, PrincipalActual, RequierePermisos, type Principal } from '../auth/index.js';
 import { ProblemaHttp } from '../comun/problema.js';
 import {
   type EmitirDocumentoDto,
@@ -29,6 +30,7 @@ export class EmpresaDocumentosController {
    * `Idempotent-Replayed: true` si la `Idempotency-Key` ya existía con el mismo cuerpo.
    */
   @Post()
+  @RequierePermisos(PERMISOS.DOCUMENTOS_EMITIR)
   async emitir(
     @Param('rut') rut: string,
     @Body({ schema: emitirDocumentoSchema }) dto: EmitirDocumentoDto,
@@ -55,18 +57,25 @@ export class EmpresaDocumentosController {
 }
 
 @Controller('documentos')
+@RequierePermisos(PERMISOS.DOCUMENTOS_LEER)
 export class DocumentosController {
   constructor(private readonly servicio: DocumentosService) {}
 
   @Get(':id')
-  async obtener(@Param('id', new ParseUUIDPipe()) id: string) {
-    const { documento, empresa } = await this.servicio.obtener(id);
+  async obtener(
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @PrincipalActual() principal: Principal,
+  ) {
+    const { documento, empresa } = await this.servicio.obtener(id, principal);
     return aRespuestaDocumento(documento, `${empresa.rut}-${empresa.dv}`);
   }
 
   @Get(':id/xml')
-  async xml(@Param('id', new ParseUUIDPipe()) id: string) {
-    const { buffer, nombre } = await this.servicio.xml(id);
+  async xml(
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @PrincipalActual() principal: Principal,
+  ) {
+    const { buffer, nombre } = await this.servicio.xml(id, principal);
     return new StreamableFile(buffer, {
       type: 'application/xml; charset=ISO-8859-1',
       disposition: `inline; filename="${nombre}"`,
@@ -77,8 +86,9 @@ export class DocumentosController {
   async pdf(
     @Param('id', new ParseUUIDPipe()) id: string,
     @Query({ schema: pdfQuerySchema }) query: PdfQuery,
+    @PrincipalActual() principal: Principal,
   ) {
-    const { buffer, nombre } = await this.servicio.pdf(id, query);
+    const { buffer, nombre } = await this.servicio.pdf(id, query, principal);
     return new StreamableFile(buffer, {
       type: 'application/pdf',
       disposition: `inline; filename="${nombre}"`,

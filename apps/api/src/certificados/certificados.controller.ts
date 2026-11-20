@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import Joi from 'joi';
+import { PERMISOS, RequierePermisos } from '../auth/index.js';
 import { type ArchivoSubido, LIMITE_ARCHIVO_BYTES } from '../comun/archivo.js';
 import { rutSchema } from '../comun/joi.js';
 import { ProblemaHttp } from '../comun/problema.js';
@@ -31,6 +32,7 @@ const cargarCertificadoSchema = Joi.object<CargarCertificadoDto>({
 });
 
 @Controller('empresas/:rut/certificados')
+@RequierePermisos(PERMISOS.CERTIFICADOS_GESTIONAR)
 export class CertificadosController {
   constructor(private readonly servicio: CertificadosService) {}
 
