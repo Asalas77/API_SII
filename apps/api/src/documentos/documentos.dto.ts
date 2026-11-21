@@ -149,3 +149,18 @@ export const pdfQuerySchema = Joi.object<PdfQuery>({
   formato: Joi.string().valid('carta', 'termica80'),
   cedible: Joi.boolean(),
 });
+
+/** Cuerpo opcional de `POST /v1/empresas/{rut}/documentos/consultar-estados`. */
+export interface ConsultarEstadosDto {
+  /** Documentos a consultar; por defecto, los `enviado` de la empresa. */
+  documentoIds?: string[];
+  /** Máximo de documentos cuando no se indican ids (por defecto 50, máximo 200). */
+  limite?: number;
+}
+
+export const consultarEstadosSchema = Joi.object<ConsultarEstadosDto>({
+  documentoIds: Joi.array().items(Joi.string().uuid()).min(1).max(200).unique(),
+  limite: Joi.number().integer().min(1).max(200),
+})
+  .without('documentoIds', 'limite')
+  .default({});

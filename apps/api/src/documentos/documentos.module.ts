@@ -8,6 +8,7 @@ import {
   EmpresaDocumentosController,
 } from './documentos.controller.js';
 import { DocumentosService } from './documentos.service.js';
+import { EstadoSiiService } from './estado-sii.service.js';
 import { Documento } from './entities/documento.entity.js';
 
 @Module({
@@ -18,7 +19,7 @@ import { Documento } from './entities/documento.entity.js';
     SiiModule,
   ],
   controllers: [EmpresaDocumentosController, DocumentosController],
-  providers: [DocumentosService],
-  exports: [TypeOrmModule, DocumentosService],
+  providers: [DocumentosService, EstadoSiiService],
+  exports: [TypeOrmModule, DocumentosService, EstadoSiiService],
 })
 export class DocumentosModule {}

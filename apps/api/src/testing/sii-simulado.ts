@@ -1,7 +1,7 @@
 /**
  * UTILIDAD DE PRUEBA - NO USAR EN PRODUCCION.
- * `fetch` falso que imita los endpoints del SII (autenticación, envío y consulta de estado, tanto
- * DTE como boletas). Se inyecta con `SII_FETCH` (`SiiModule`) en los e2e.
+ * `fetch` falso que imita los endpoints del SII (autenticación, envío y consulta de estado de envíos y de
+ * documentos, tanto DTE como boletas). Se inyecta con `SII_FETCH` (`SiiModule`) en los e2e.
  */
 import { escaparXml } from '../dte-core/index.js';
 
@@ -18,6 +18,13 @@ export interface SiiSimulado {
   estadoBoleta: Record<string, unknown>;
   /** `ESTADO`, `GLOSA` y `RESP_BODY` (XML interno) de `getEstUp`; modificables. */
   estadoDte: { estado: string; glosa: string; cuerpoXml: string };
+  /**
+   * Respuesta de `getEstDte` por documento, con clave `tipo-folio` (p. ej. `33-1`). `estado` puede
+   * ser un código de documento (DOK, FNA, ...) o de error (-4, 001). Sin entrada, responde DOK.
+   */
+  estadoDocumentoDte: Record<string, { estado: string; glosa?: string }>;
+  /** Igual para `GET boleta.electronica/{rut}-{dv}-{tipo}-{folio}/estado` (clave `tipo-folio`); sin entrada, DOK. */
+  estadoDocumentoBoleta: Record<string, { codigo: string; descripcion?: string }>;
   /** Siguiente track id (se incrementa en cada envío). */
   siguienteTrackId: number;
 }
@@ -47,6 +54,8 @@ export function crearSiiSimulado(): SiiSimulado {
       cuerpoXml:
         '<TIPO_DOCTO>33</TIPO_DOCTO><INFORMADOS>1</INFORMADOS><ACEPTADOS>1</ACEPTADOS><RECHAZADOS>0</RECHAZADOS><REPAROS>0</REPAROS>',
     },
+    estadoDocumentoDte: {},
+    estadoDocumentoBoleta: {},
     fetch: async (url, init) => {
       const method = init?.method ?? 'GET';
       sim.llamadas.push({ url, method, body: init?.body });
@@ -79,6 +88,15 @@ export function crearSiiSimulado(): SiiSimulado {
         });
       }
 
+      const mb = /boleta\.electronica\/\d+-\w-(\d+)-(\d+)\/estado$/.exec(u.pathname);
+      if (mb && method === 'GET') {
+        const e = sim.estadoDocumentoBoleta[`${mb[1]}-${mb[2]}`] ?? { codigo: 'DOK' };
+        return Response.json({
+          codigo: e.codigo,
+          descripcion: e.descripcion ?? `Estado simulado ${e.codigo}`,
+        });
+      }
+
       // --- DTE (SOAP + upload) ---
       if (u.pathname.endsWith('/CrSeed.jws')) {
         return xml(soap('getSeed', respuesta('<ESTADO>00</ESTADO>', '<SEMILLA>1234567890123</SEMILLA>')));
@@ -89,6 +107,20 @@ export function crearSiiSimulado(): SiiSimulado {
       if (u.pathname.endsWith('/DTEUpload')) {
         return xml(
           `<?xml version="1.0" encoding="UTF-8"?><RECEPCIONDTE><RUTSENDER>1-9</RUTSENDER><RUTCOMPANY>1-9</RUTCOMPANY><FILE>envio.xml</FILE><TIMESTAMP>2026-11-18 10:00:00</TIMESTAMP><STATUS>0</STATUS><TRACKID>${sim.siguienteTrackId++}</TRACKID></RECEPCIONDTE>`,
+        );
+      }
+      if (u.pathname.endsWith('/QueryEstDte.jws')) {
+        const cuerpo = (typeof init?.body === 'string' ? init.body : '');
+        const tipo = /<TipoDte>(\d+)<\/TipoDte>/.exec(cuerpo)?.[1];
+        const folio = /<FolioDte>(\d+)<\/FolioDte>/.exec(cuerpo)?.[1];
+        const e = sim.estadoDocumentoDte[`${tipo}-${folio}`] ?? { estado: 'DOK' };
+        return xml(
+          soap(
+            'getEstDte',
+            respuesta(
+              `<ESTADO>${e.estado}</ESTADO><GLOSA_ESTADO>${e.glosa ?? `Estado simulado ${e.estado}`}</GLOSA_ESTADO>`,
+            ),
+          ),
         );
       }
       if (u.pathname.endsWith('/QueryEstUp.jws')) {

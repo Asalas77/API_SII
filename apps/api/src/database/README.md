@@ -16,7 +16,7 @@ empresas 1──* envios
 | `empresas` | Emisor (tenant). RUT único, giro, ACTECOs (`int[]`), resolución SII, `ambiente_sii` (`certificacion`/`produccion`), opciones del PDF (`unidad_sii`, `url_verificacion`, `logo` bytea + `logo_tipo`). |
 | `certificados` | PFX y clave **cifrados** (`bytea`, AES-256-GCM vía `CifradoService`), vigencia, firmante. Índice `(empresa_id, activo)`. |
 | `cafs` | CAF por tipo de DTE: rango, `folio_siguiente` (cursor), vencimiento, XML completo, `agotado`/`anulado`. Único `(empresa_id, tipo_dte, folio_desde)`. |
-| `documentos` | DTE emitido: folio, receptor, montos (`bigint`), `estado`, `track_id`, XML firmado, TED, `reparos` (jsonb), `clave_idempotencia`. Único `(empresa_id, tipo_dte, folio)` y único parcial `(empresa_id, clave_idempotencia)` cuando no es null. |
+| `documentos` | DTE emitido: folio, receptor, montos (`bigint`), `estado`, `track_id`, XML firmado, TED, `reparos` (jsonb), `estado_sii`/`glosa_sii`/`consultado_sii_en`/`respuesta_estado_sii` (último estado informado por el SII, migración `1795500000000-EstadoSiiDocumento`), `clave_idempotencia`. Único `(empresa_id, tipo_dte, folio)` y único parcial `(empresa_id, clave_idempotencia)` cuando no es null. |
 | `envios` | Envío al SII (canal `dte`/`boleta`), Track ID, estado SII (REC, EPR, RPR, RCH…), respuesta jsonb, intentos. |
 | `envio_documentos` | N:M envío–documento con estado/glosa por documento. PK compuesta. |
 | `libros` | Libro electrónico generado y firmado (`tipo_operacion` VENTA/COMPRA/GUIA, `tipo_libro`, `tipo_envio`, `periodo` AAAA-MM, `folio_notificacion`, `nro_segmento`), `xml_libro`, `resumen` (jsonb), Track ID, estado y respuesta del SII. RLS forzada por `empresa_id`. Migración `1795400000000-Libros`. |

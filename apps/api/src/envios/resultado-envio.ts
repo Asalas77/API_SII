@@ -44,6 +44,11 @@ export interface ResultadoDocumento {
   codigo: string;
   glosa: string;
   reparos: unknown;
+  /**
+   * true si el resultado del envío no permite atribuir el estado a este documento (DTE con
+   * resultado mixto dentro de un tipo): hay que consultarlo con `getEstDte`.
+   */
+  requiereConsultaDocumento?: boolean;
 }
 
 export interface EntradaResultado {
@@ -88,8 +93,9 @@ export function resumenDeCuerpo(cuerpo: unknown): ResumenTipoDte[] {
  *   listados quedan `aceptado`. DOK aceptado; RPR/RLV aceptado con reparos; RCH rechazado.
  * - DTE: `getEstUp` solo da conteos por tipo. Sin rechazos ni reparos: `aceptado`; todos con
  *   reparos: `aceptado_con_reparos`; todos rechazados: `rechazado`. Un resultado mezclado dentro de
- *   un mismo tipo no se puede atribuir a un documento: queda sin cambio y debe revisarse con
- *   `getEstDte` (pendiente).
+ *   un mismo tipo no se puede atribuir a un documento: queda sin cambio y con
+ *   `requiereConsultaDocumento`; `EnviosService.consultar` lo resuelve con `getEstDte`
+ *   (`EstadoSiiService`).
  */
 export function resolverResultado(e: EntradaResultado): ResultadoDocumento[] {
   const sinCambio = (d: DocumentoEnSobre, glosa = e.glosa): ResultadoDocumento => ({
@@ -167,9 +173,12 @@ export function resolverResultado(e: EntradaResultado): ResultadoDocumento[] {
     if (r.aceptados === 0 && r.rechazados === 0 && r.reparos > 0) {
       return { documentoId: d.documentoId, estado: 'aceptado_con_reparos', codigo: 'RPR', glosa: 'Aceptado con reparos', reparos: null };
     }
-    return sinCambio(
-      d,
-      `Resultado mixto en el tipo ${d.tipoDte} (${r.aceptados} aceptados, ${r.reparos} con reparos, ${r.rechazados} rechazados): consulte el estado por documento`,
-    );
+    return {
+      ...sinCambio(
+        d,
+        `Resultado mixto en el tipo ${d.tipoDte} (${r.aceptados} aceptados, ${r.reparos} con reparos, ${r.rechazados} rechazados): consulte el estado por documento`,
+      ),
+      requiereConsultaDocumento: true,
+    };
   });
 }

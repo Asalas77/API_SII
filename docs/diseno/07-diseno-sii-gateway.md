@@ -322,6 +322,8 @@ No hay `esFinal` para el estado de boleta (es una consulta puntual, no un proces
 
 ### 9.4 Consultas DTE (`getEstUp` / `getEstDte`)
 
+> **Uso en la API (implementado):** `POST /v1/documentos/{id}/consultar-estado` y `POST /v1/empresas/{rut}/documentos/consultar-estados` llaman a `getEstDte` (o al estado de boleta) y aplican el mapeo de `apps/api/src/documentos/README.md`; la consulta de un envío DTE con resultado mezclado por tipo consulta automáticamente cada documento afectado.
+
 El cliente **no** clasifica los estados: devuelve `estado`, `glosa`, el XML `SII:RESPUESTA` des-escapado, `cabecera` (`RESP_HDR`) y `cuerpo` (`RESP_BODY`) parseados, sin `esFinal`. Solo `001`, `002`, `003` se tratan como token/cookie inválido. Los estados de salida documentados en `SII_WS_Estado_Envio_QueryEstUp.pdf` incluyen `RSC`, `SOK`, `CRT`, `RFR`, `FOK`, `PRD`, `RCT`, `EPR` y estados de error negativos (-3 a -14); los negativos se devuelven como `estado`/`glosa` sin lanzar excepción. Pendiente: tabla de estados y `esFinal` equivalentes para el canal DTE.
 
 ## 10. Codificación y parseo (`comun/xml.ts`)

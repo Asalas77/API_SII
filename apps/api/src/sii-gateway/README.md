@@ -42,6 +42,8 @@ Los strings XML se codifican según el encoding declarado en el prólogo (ISO-88
 
 `consultarEstadoEnvio` (`getEstUp`) y `consultarEstadoDte` (`getEstDte`) devuelven además `descripcionEstado` y `esFinal` (`dte/estados.ts`, exportados `clasificarEstadoEnvioDte`/`clasificarEstadoDte`). Envío: finales EPR, RPR, RCH, RCO, RCT, RFR, RSC, RPT, VOF; en curso REC, SOK, CRT, FOK, PDR/PRD. Documento: DOK, DNK, FNA, FAN, EMP, TMD, TMC, MMD, MMC, AND, ANC finales; FAU (no recibido) no es final. Códigos de error de consulta (-1 a -14, 001-003) y estados desconocidos: `esFinal: false`. Los códigos RPR/RCH/RCO/RPT/VOF/REC/PRD vienen de la API de boletas, no del PDF de QueryEstUp (que solo lista RSC, SOK, CRT, RFR, FOK, PDR, RCT, EPR).
 
+Estas consultas las usa `src/documentos/estado-sii.service.ts` (estado por documento); un `ESTADO` de `getEstDte` que no es un código de documento se trata allí como error de consulta. En el PDF de QueryEstDte la cabecera trae `GLOSA_ESTADO` y `GLOSA_ERR`; el cliente expone `GLOSA` y el resto en `cabecera`.
+
 ## Caché de token
 
 Por (tipo boleta|dte, ambiente, rutEmpresa), en memoria del proceso, TTL por defecto 50 minutos (`cacheToken: { ttlMs, almacen, ahora }`; `false` la desactiva). Las peticiones concurrentes de token se deduplican. Ante 401 (o STATUS 5 del upload, o ESTADO 001/002/003 en consultas DTE) se invalida, se renueva una sola vez y se repite la operación. El token de boletas y el de DTE son distintos y no se mezclan.

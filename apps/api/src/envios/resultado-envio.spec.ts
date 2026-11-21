@@ -50,6 +50,27 @@ describe('resolverResultado', () => {
     expect(res(0, 0, 1)).toBe('rechazado');
     expect(res(1, 0, 1)).toBeNull();
   });
+
+  it('DTE: el resultado mixto se marca para consultarlo con getEstDte', () => {
+    const r = resolverResultado({
+      estado: 'EPR',
+      glosa: 'ok',
+      esFinal: true,
+      documentos: [{ documentoId: 'x', tipoDte: 33, folio: 1 }],
+      resumenDte: [{ tipo: 33, informados: 2, aceptados: 1, reparos: 0, rechazados: 1 }],
+    })[0];
+    expect(r.requiereConsultaDocumento).toBe(true);
+    expect(r.estado).toBeNull();
+    // Un resultado no mixto no se marca.
+    const ok = resolverResultado({
+      estado: 'EPR',
+      glosa: 'ok',
+      esFinal: true,
+      documentos: [{ documentoId: 'x', tipoDte: 33, folio: 1 }],
+      resumenDte: [{ tipo: 33, informados: 1, aceptados: 1, reparos: 0, rechazados: 0 }],
+    })[0];
+    expect(ok.requiereConsultaDocumento).toBeUndefined();
+  });
 });
 
 describe('resumenDeCuerpo', () => {

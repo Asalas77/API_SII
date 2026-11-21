@@ -3,6 +3,7 @@ import { In, type EntityManager } from 'typeorm';
 import type { AccesoEmpresas } from '../auth/principal.js';
 import { EjecutorEmpresa } from '../database/ejecutor-empresa.js';
 import { Documento } from '../documentos/entities/documento.entity.js';
+import { EstadoSiiService } from '../documentos/estado-sii.service.js';
 import { noEncontrado, ProblemaHttp } from '../comun/problema.js';
 import {
   BOLETAS_POR_SOBRE_RECOMENDADO,
@@ -15,8 +16,8 @@ import {
 } from '../dte-core/index.js';
 import type { Empresa } from '../empresas/entities/empresa.entity.js';
 import { EmpresasService } from '../empresas/empresas.service.js';
-import { type CertificadoActivo, SiiClienteFactory } from '../sii/sii-cliente.factory.js';
-import { clasificarEstadoEnvioDte } from '../sii-gateway/index.js';
+import { type CertificadoActivo, type ClientesSii, SiiClienteFactory } from '../sii/sii-cliente.factory.js';
+import { type AmbienteSii, clasificarEstadoEnvioDte } from '../sii-gateway/index.js';
 import type { CrearEnvioDto } from './envios.dto.js';
 import { EnvioDocumento } from './entities/envio-documento.entity.js';
 import { Envio, type CanalEnvio } from './entities/envio.entity.js';
@@ -77,6 +78,7 @@ export class EnviosService {
     private readonly ejecutor: EjecutorEmpresa,
     private readonly empresas: EmpresasService,
     private readonly sii: SiiClienteFactory,
+    private readonly estadosSii: EstadoSiiService,
   ) {}
 
   /**
@@ -385,6 +387,9 @@ export class EnviosService {
       });
     }
 
+    // Resultado mixto en un tipo (DTE): getEstUp no dice cuál documento falló; se pregunta uno a uno.
+    resultados = await this.resolverMixtos(resultados, empresa, clientes, envio.ambienteSii);
+
     await this.ejecutor.ejecutar(async (em) => {
       await em.update(
         Envio,
@@ -412,6 +417,45 @@ export class EnviosService {
       }
     });
     return this.detalle(envio.id);
+  }
+
+  /**
+   * Para los documentos que `resolverResultado` no pudo atribuir (resultado mixto en un envío
+   * final), consulta `getEstDte` y aplica el mapeo (`EstadoSiiService`, que ya guarda el estado del
+   * documento). Si la consulta de un documento falla queda sin cambio, con el error en la glosa.
+   */
+  private async resolverMixtos(
+    resultados: ReturnType<typeof resolverResultado>,
+    empresa: Empresa,
+    clientes: ClientesSii,
+    ambiente: AmbienteSii,
+  ): Promise<ReturnType<typeof resolverResultado>> {
+    const ids = resultados.filter((r) => r.requiereConsultaDocumento).map((r) => r.documentoId);
+    if (ids.length === 0) return resultados;
+    const docs = await this.ejecutor.ejecutar((em) =>
+      em.getRepository(Documento).find({ where: { id: In(ids) } }),
+    );
+    const consultas = await this.estadosSii.consultarVarios(
+      docs,
+      empresa,
+      () => Promise.resolve(clientes),
+      ambiente,
+    );
+    return resultados.map((r) => {
+      if (!r.requiereConsultaDocumento) return r;
+      const c = consultas.get(r.documentoId);
+      if (c?.resultado) {
+        // El estado del documento ya lo aplicó EstadoSiiService.
+        return {
+          ...r,
+          estado: null,
+          codigo: c.resultado.estadoSii,
+          glosa: c.resultado.glosaSii,
+          requiereConsultaDocumento: false,
+        };
+      }
+      return { ...r, glosa: `${r.glosa} (getEstDte falló: ${c?.error.detail ?? 'sin respuesta'})` };
+    });
   }
 
   private async detalle(envioId: string): Promise<EnvioRespuesta> {

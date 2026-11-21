@@ -39,6 +39,10 @@ export interface DocumentoRespuesta {
   };
   trackId: string | null;
   reparos: unknown;
+  /** Último estado informado por el SII para el documento (DOK, FAU, ...); null si nunca se consultó. */
+  estadoSii: string | null;
+  glosaSii: string | null;
+  consultadoSiiEn: Date | null;
   enlaces: { xml: string; pdf: string };
   creadoEn: Date;
 }
@@ -63,6 +67,9 @@ export function aRespuestaDocumento(
     },
     trackId: d.trackId,
     reparos: d.reparos ?? null,
+    estadoSii: d.estadoSii ?? null,
+    glosaSii: d.glosaSii ?? null,
+    consultadoSiiEn: d.consultadoSiiEn ?? null,
     enlaces: { xml: `/v1/documentos/${d.id}/xml`, pdf: `/v1/documentos/${d.id}/pdf` },
     creadoEn: d.creadoEn,
   };

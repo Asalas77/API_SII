@@ -142,6 +142,20 @@ export class Documento {
   })
   huellaSolicitud: string | null;
 
+  /** Último código de estado devuelto por el SII para el documento (DOK, FAU, FNA, ...). */
+  @Column({ name: 'estado_sii', type: 'varchar', length: 10, nullable: true })
+  estadoSii: string | null;
+
+  @Column({ name: 'glosa_sii', type: 'text', nullable: true })
+  glosaSii: string | null;
+
+  @Column({ name: 'consultado_sii_en', type: 'timestamptz', nullable: true })
+  consultadoSiiEn: Date | null;
+
+  /** Resumen de la última respuesta de estado del SII. */
+  @Column({ name: 'respuesta_estado_sii', type: 'jsonb', nullable: true })
+  respuestaEstadoSii: unknown;
+
   /** Metadato opcional para correlacionar con el sistema de origen (p. ej. ERP). */
   @Column({ type: 'jsonb', nullable: true })
   origen: unknown;

@@ -60,7 +60,20 @@ curl -H "$K" -X POST $B/envios/<id-o-trackid>/consultar    # consulta al SII y a
 curl -H "$K" $B/documentos/<id>                            # estado: aceptado | aceptado_con_reparos | rechazado
 ```
 
-Estados de envío finales: EPR, RPR, RCH, RCO, RFR, RSC, RCT, RPT, VOF. En boletas se obtiene el detalle por documento (reparos en `documentos.reparos`); en DTE el SII solo informa conteos por tipo (un resultado mixto queda `enviado`: revíselo en el portal de certificación). Cuando el set esté aceptado, avise en el sitio del SII ("reportar set de pruebas para revisión").
+Estados de envío finales: EPR, RPR, RCH, RCO, RFR, RSC, RCT, RPT, VOF. En boletas se obtiene el detalle por documento (reparos en `documentos.reparos`); en DTE el SII solo informa conteos por tipo, y si un tipo tiene resultados mezclados la API consulta automáticamente `getEstDte` de cada documento de ese tipo.
+
+### Estado de cada documento
+
+Para ver qué dice el SII de un documento en particular (`getEstDte` en DTE; estado de boleta en 39/41), solo si ya fue enviado:
+
+```bash
+curl -H "$K" -X POST $B/documentos/<id>/consultar-estado   # { documento, estadoSii, glosaSii, esFinal, descripcionEstado, advertencia? }
+# Todos los documentos "enviado" de la empresa (opcional: {"documentoIds":[...],"limite":100}; máx. 200)
+curl -H "$K" -X POST $B/empresas/76086428-5/documentos/consultar-estados
+curl -H "$K" $B/documentos/<id>                            # incluye estadoSii, glosaSii, consultadoSiiEn
+```
+
+DOK/TMD/TMC/MMD/MMC/AND/ANC -> `aceptado`; FNA/EMP -> `rechazado`; FAN -> `anulado`; DNK (datos no coinciden) y FAU (no recibido) no cambian el estado y devuelven una `advertencia`. Un error del SII responde 502/503 sin modificar el documento. Tabla completa en `apps/api/src/documentos/README.md`. Cuando el set esté aceptado, avise en el sitio del SII ("reportar set de pruebas para revisión").
 
 ## 6. Muestras impresas
 

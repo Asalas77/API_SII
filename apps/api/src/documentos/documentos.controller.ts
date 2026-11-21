@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Headers,
+  HttpCode,
   Param,
   ParseUUIDPipe,
   Post,
@@ -14,16 +15,36 @@ import type { Response } from 'express';
 import { PERMISOS, PrincipalActual, RequierePermisos, type Principal } from '../auth/index.js';
 import { ProblemaHttp } from '../comun/problema.js';
 import {
+  type ConsultarEstadosDto,
+  consultarEstadosSchema,
   type EmitirDocumentoDto,
   emitirDocumentoSchema,
   type PdfQuery,
   pdfQuerySchema,
 } from './documentos.dto.js';
 import { aRespuestaDocumento, DocumentosService } from './documentos.service.js';
+import { EstadoSiiService } from './estado-sii.service.js';
 
 @Controller('empresas/:rut/documentos')
 export class EmpresaDocumentosController {
-  constructor(private readonly servicio: DocumentosService) {}
+  constructor(
+    private readonly servicio: DocumentosService,
+    private readonly estados: EstadoSiiService,
+  ) {}
+
+  /**
+   * Consulta al SII el estado de los documentos `enviado` de la empresa (o de `documentoIds`), con
+   * concurrencia baja. Un fallo por documento se informa en su ítem y no aborta el lote.
+   */
+  @Post('consultar-estados')
+  @HttpCode(200)
+  @RequierePermisos(PERMISOS.DOCUMENTOS_LEER)
+  consultarEstados(
+    @Param('rut') rut: string,
+    @Body({ schema: consultarEstadosSchema }) dto: ConsultarEstadosDto | undefined,
+  ) {
+    return this.estados.consultarLote(rut, dto ?? {});
+  }
 
   /**
    * Emite un documento (folio + TED + firma en una transacción). 201 al crear; 200 con
@@ -59,7 +80,10 @@ export class EmpresaDocumentosController {
 @Controller('documentos')
 @RequierePermisos(PERMISOS.DOCUMENTOS_LEER)
 export class DocumentosController {
-  constructor(private readonly servicio: DocumentosService) {}
+  constructor(
+    private readonly servicio: DocumentosService,
+    private readonly estados: EstadoSiiService,
+  ) {}
 
   @Get(':id')
   async obtener(
@@ -68,6 +92,27 @@ export class DocumentosController {
   ) {
     const { documento, empresa } = await this.servicio.obtener(id, principal);
     return aRespuestaDocumento(documento, `${empresa.rut}-${empresa.dv}`);
+  }
+
+  /**
+   * Consulta al SII el estado del documento (getEstDte o estado de boleta), lo guarda y aplica el
+   * mapeo al estado de emisión. 409 si el documento aún no se envió; 502/503 si el SII falla.
+   */
+  @Post(':id/consultar-estado')
+  @HttpCode(200)
+  async consultarEstado(
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @PrincipalActual() principal: Principal,
+  ) {
+    const r = await this.estados.consultarEstadoDocumento(id, principal);
+    return {
+      documento: aRespuestaDocumento(r.documento, r.rutEmpresa),
+      estadoSii: r.estadoSii,
+      glosaSii: r.glosaSii,
+      esFinal: r.esFinal,
+      descripcionEstado: r.descripcionEstado,
+      ...(r.advertencia ? { advertencia: r.advertencia } : {}),
+    };
   }
 
   @Get(':id/xml')
