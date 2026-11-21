@@ -16,6 +16,7 @@ La documentación de ingeniería de diseño completa (arquitectura, datos, flujo
 | `apps/api/src/sii-gateway/` | Clientes HTTP hacia el SII: API REST de boletas (semilla, token, envío, estados) y web services SOAP + upload de DTE |
 | `apps/api/src/config/`, `database/`, `health/`, `seguridad/` | Configuración validada con Joi, TypeORM y migraciones, `GET /health`, cifrado AES-256-GCM de certificados |
 | `apps/api/src/empresas/`, `certificados/`, `folios/`, `documentos/`, `envios/` | Modelo de datos multiempresa y servicio transaccional de folios |
+| `apps/sap-b1-worker/` | Worker de integración con SAP Business One (fase 1): lee documentos por Service Layer, los emite en la API `/v1`, los envía al SII y escribe folio/estado en UDFs `U_SII_*`. Node 24, TypeScript, sin dependencias de runtime; ver su README |
 | `apps/api/resources/sii/` | XSD oficiales del SII (paquete del 2026-02-19 y `EnvioBOLETA_v11.xsd`) y OpenAPI oficial de la API de boletas |
 | `docs/` | Documento de arquitectura y referencias oficiales descargadas (`docs/referencias-sii/`) |
 | `docker-compose.yml` | PostgreSQL 16 y Redis 7 para desarrollo |
@@ -95,5 +96,5 @@ probado todavía contra el ambiente de certificación real del SII: es el siguie
 Hecho: andamiaje, infraestructura, núcleo criptográfico y de XML, clientes del SII, constructores de documentos,
 modelo de datos inicial y servicio de folios (ver READMEs de cada carpeta). Pendiente: caso de uso de emisión
 (API `/v1/empresas/{rut}/documentos`), colas de envío, representación impresa (PDF con PDF417), entrega digital
-de boletas, certificación ante el SII y la integración con SAP Business One (worker sobre Service Layer y add-on
-UI API). Detalle en la sección 6 del documento de arquitectura.
+de boletas, certificación ante el SII y la integración con SAP Business One (el worker de la fase 1 está en
+`apps/sap-b1-worker`; falta probarlo contra un B1 real y el add-on UI API de la fase 2). Detalle en la sección 6 del documento de arquitectura.

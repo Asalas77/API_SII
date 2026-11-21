@@ -1,6 +1,13 @@
 # 14 - Integración con SAP Business One
 
-Estado: **planificada, nada implementado**. Base: sección 5 de `docs/01-opciones-arquitectura-y-pruebas.md`. Dependencias: la API `/v1` de documentos y envíos (doc 09, planificada) que a su vez usa `dte-core` y `sii-gateway`. Los puntos tomados de fuentes secundarias o no confirmados con el partner están marcados *(verificar)*.
+Estado: **Fase 1 implementada (`apps/sap-b1-worker`, ver su README); fase 2 (add-on UI API) pendiente.** Base: sección 5 de `docs/01-opciones-arquitectura-y-pruebas.md`. Dependencias: la API `/v1` de documentos y envíos (doc 09), que ya existe (`apps/api`) y usa `dte-core` y `sii-gateway`. La fase 1 se probó sólo contra un Service Layer y una API **simulados**; nada se ha ejecutado aún contra un B1 real. Los puntos tomados de fuentes secundarias o no confirmados con el partner están marcados *(verificar)*.
+
+Diferencias entre este diseño y lo implementado en la fase 1:
+- **No hay webhooks** en la API: el worker sondea (`POST /v1/documentos/:id/consultar-estado`), con un intervalo mínimo por documento.
+- **No hay cola automática de envíos al SII**: el worker dispara `POST /v1/empresas/:rut/envios` con `{ documentoIds }` (boletas y DTE por separado) para los documentos `EMITIDO`.
+- El worker es una **app independiente** (`apps/sap-b1-worker`, Node/TypeScript, sin dependencias de runtime), una instancia por company de B1 y RUT emisor.
+- UDFs adicionales a los de la sección 4: `U_SII_CodRef`, `U_SII_RazonRef`, `U_SII_TipoDocRef`, `U_SII_FolioRef` (referencias de notas) y `U_SII_Giro` en el socio de negocios (`OCRD`).
+- La nota de débito (56) se modela como factura de deudores con `U_SII_TipoDTE = 56`.
 
 ## 1. Principio rector
 
@@ -46,7 +53,7 @@ flowchart LR
     ADDON --- DOC
 ```
 
-- **Fase 1 - worker sobre Service Layer.** Puede vivir en la misma API NestJS o como servicio separado. Detecta documentos nuevos (`OINV`, `ORIN`, `ODLN`) marcados para emisión, arma el payload, llama a la API y escribe el resultado en UDFs y adjuntos. Sin instalación en los puestos de trabajo; sirve a clientes Windows, Web Client y cloud.
+- **Fase 1 - worker sobre Service Layer.** Implementada como servicio separado (`apps/sap-b1-worker`). Detecta documentos nuevos (`OINV`, `ORIN`, `ODLN`) marcados para emisión, arma el payload, llama a la API y escribe el resultado en UDFs y adjuntos. Sin instalación en los puestos de trabajo; sirve a clientes Windows, Web Client y cloud.
 - **Fase 2 - add-on UI API en C# delgado.** Validaciones previas al "Agregar" (RUT y giro del receptor, dirección, tipo de documento SII elegido en un UDF, campos de traslado en entregas), botones Emitir / Reenviar / Ver PDF / Consultar estado y estado visible en el formulario. Solo orquesta y muestra; llama a la misma API.
 - Ambas fases usan el mismo contrato (doc 09); el worker sigue siendo el mecanismo de respaldo y de conciliación.
 
@@ -190,9 +197,10 @@ Reglas:
 ## 9. Riesgos y pendientes
 
 1. Diversidad de versiones (FP), bases (MSSQL/HANA) y paquetes de localización: validar con el partner antes de comprometer alcance.
-2. Falta en `dte-core` el proveedor de software (`RutProvSW`, `RznSocProvSW`) de boletas y el bloque de traslado de la guía (Res. Ex. 144/2026): bloquean el mapeo completo de `ODLN` y de boletas.
-3. La API `/v1` de documentos aún no existe; esta integración depende de ella (y de la capa de envíos con cola).
-4. Definir la estructura exacta de los UDFs de traslado cuando se tenga el XSD actualizado.
+2. **Pendiente.** Falta en `dte-core` el proveedor de software (`RutProvSW`, `RznSocProvSW`) de boletas y el bloque de traslado de la guía (Res. Ex. 144/2026): bloquean el mapeo completo de `ODLN` y de boletas. El worker ya envía `indTraslado` y el texto de `U_SII_Transporte` (en `origen.transporte`).
+3. **Resuelto en parte.** La API `/v1` de documentos y envíos ya existe y el worker la consume. Sigue sin haber webhooks ni cola automática de envíos: el worker sondea y dispara los envíos él mismo.
+4. **Pendiente.** Definir la estructura exacta de los UDFs de traslado cuando se tenga el XSD actualizado.
 5. Quién gestiona la certificación SII de cada empresa cliente (por RUT) y el ambiente por empresa.
-6. Seguridad: la credencial de la API (clave por empresa) y la de Service Layer se guardan fuera del código (gestor de secretos); el worker tiene el mínimo de permisos en B1 (solo los objetos y UDFs necesarios).
-7. Facturas de proveedores (`OPCH`), intercambio y aceptación/reclamo quedan para una fase posterior.
+6. **Resuelto en parte.** Seguridad: credenciales por variables de entorno (nunca en logs), API key por empresa con permisos mínimos, TLS verificado (CA propia vía `NODE_EXTRA_CA_CERTS`, sin desactivar la verificación). Pendiente: gestor de secretos en producción y permisos mínimos reales del usuario de B1 (a validar con un B1 real).
+7. **Pendiente (verificar con un B1 real).** Supuestos de la fase 1 no comprobados sin SAP: nombres de campos de Service Layer (`PriceAfterVAT`, `BPAddresses.County` como comuna, `AttachmentEntry`, `Attachments2` multipart), `$select` y `$orderby` en las lecturas, formato de `odata.nextLink`, versión `v1`/`v2` y permisos de actualizar UDFs en documentos cerrados.
+8. **Pendiente.** Facturas de proveedores (`OPCH`), intercambio y aceptación/reclamo quedan para una fase posterior.
