@@ -251,7 +251,7 @@ namespace SapB1Addon.Core.Tests
         [Fact]
         public void Guia_y_nota_de_credito_se_emiten_con_su_clave_por_objtype()
         {
-            using var g = new Escenario(Datos.Guia(300));
+            using var g = new Escenario(Datos.GuiaConTraslado(300));
             Assert.True(g.Emitir().Ejecutar().Exito);
             Assert.Equal("b1:76086428-5:15:300", g.Doc.Cab.SiiIdemKey);
             Assert.Equal("52", g.Doc.Cab.SiiTipoDte);
@@ -262,6 +262,16 @@ namespace SapB1Addon.Core.Tests
             Assert.True(r.Exito, r.Mensaje);
             Assert.Equal("b1:76086428-5:14:200", n.Doc.Cab.SiiIdemKey);
             Assert.Contains("\"folioRef\":\"4321\"", n.Servidor.Emisiones.Single().Cuerpo);
+        }
+
+        [Fact]
+        public void Guia_sin_datos_de_traslado_no_se_emite_y_no_llama_a_la_api()
+        {
+            using var g = new Escenario(Datos.Guia(300));
+            var r = g.Emitir().Ejecutar();
+            Assert.False(r.Exito);
+            Assert.Empty(g.Servidor.Emisiones);
+            Assert.Contains(g.Msg.EnEstado, m => m.Nivel == NivelMensaje.Error);
         }
 
         [Fact]

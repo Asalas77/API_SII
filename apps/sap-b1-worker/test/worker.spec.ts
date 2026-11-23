@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { crearLogger } from '../src/log.js';
 import { instalarUdfs, UDFS } from '../src/udfs.js';
 import { Entorno } from './entorno.js';
-import { boleta, facturaAfecta, guia, notaCredito, linea } from './fixtures.js';
+import { boleta, facturaAfecta, guia, guiaConTraslado, notaCredito, linea } from './fixtures.js';
 
 type Fila = Record<string, unknown>;
 const doc = (e: Entorno, ent: string, n: number): Fila => e.sl.doc(ent, n);
@@ -66,12 +66,20 @@ describe('ciclo del worker', () => {
         ? { estado: 'rechazado', estadoSii: 'FNA', glosaSii: 'Rechazado por errores en datos' }
         : { estado: 'aceptado_con_reparos', estadoSii: 'DOK', glosaSii: 'Aceptado', reparos: [{ codigo: 'R1', detalle: 'Giro receptor largo' }] };
     e.sl.agregarDoc('Invoices', { ...facturaAfecta() });
-    e.sl.agregarDoc('DeliveryNotes', { ...guia() });
+    e.sl.agregarDoc('DeliveryNotes', { ...guiaConTraslado() });
     await e.worker.ciclo();
     expect(doc(e, 'Invoices', 100)['U_SII_Estado']).toBe('RECHAZADO');
     expect(String(doc(e, 'Invoices', 100)['U_SII_Glosa'])).toMatch(/FNA: Rechazado/);
     expect(doc(e, 'DeliveryNotes', 300)['U_SII_Estado']).toBe('REPAROS');
     expect(String(doc(e, 'DeliveryNotes', 300)['U_SII_Glosa'])).toMatch(/Giro receptor largo/);
+  });
+
+  it('guía sin datos de traslado: ERROR en la validación local, sin llamar a la API', async () => {
+    e.sl.agregarDoc('DeliveryNotes', { ...guia() });
+    await e.worker.ciclo();
+    expect(doc(e, 'DeliveryNotes', 300)['U_SII_Estado']).toBe('ERROR');
+    expect(String(doc(e, 'DeliveryNotes', 300)['U_SII_Glosa'])).toMatch(/U_SII_CatTraslado/);
+    expect(e.api.emisiones).toHaveLength(0);
   });
 
   it('422 de la API -> ERROR con glosa y sin reintento', async () => {

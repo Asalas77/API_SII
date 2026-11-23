@@ -35,12 +35,11 @@ namespace SapB1Addon.Core.Tests
             ValidadorDocumento.Validar(new DocumentoFalso(c), Datos.Config());
 
         [Fact]
-        public void Sin_categoria_no_hay_bloque_y_avisa_que_transporte_esta_obsoleto()
+        public void Sin_categoria_la_guia_se_rechaza_localmente_y_transporte_obsoleto_no_la_reemplaza()
         {
             var r = Validar(Datos.Guia());
-            Assert.True(r.Ok, string.Join("; ", r.Errores));
-            Assert.Null(r.Cuerpo!.Traslado);
-            Assert.Contains(r.Advertencias, a => a.Contains("Res. Ex. SII 144") && a.Contains("obsoleto"));
+            Assert.False(r.Ok);
+            Assert.Contains(r.Errores, e => e.Contains("sin datos de traslado") && e.Contains("U_SII_CatTraslado") && e.Contains("Res. Ex. SII 144") && e.Contains("obsoleto"));
         }
 
         [Fact]

@@ -259,7 +259,7 @@ namespace SapB1Addon.Core
                 else
                 {
                     idDoc.IndTraslado = ind;
-                    traslado = MapearTraslado(doc, ind, detalle.Any(d => !(d.PrecioUnitario > 0)), errores, r.Advertencias);
+                    traslado = MapearTraslado(doc, ind, detalle.Any(d => !(d.PrecioUnitario > 0)), errores);
                 }
             }
 
@@ -333,15 +333,17 @@ namespace SapB1Addon.Core
 
         /// <summary>
         /// Port de <c>mapearTraslado</c> del worker: bloque <c>traslado</c> de la guía desde los UDF estructurados (Res. Ex. SII
-        /// 144/2026). Sin <c>U_SII_CatTraslado</c> no hay bloque (advertencia). Si difiere del worker, manda el worker.
+        /// 144/2026). Sin <c>U_SII_CatTraslado</c> la guía se rechaza localmente (la Res. 144 exige el transporte en toda guía). Si difiere del worker, manda el worker.
         /// </summary>
-        private static CuerpoTraslado? MapearTraslado(CabeceraDocumento doc, int ind, bool hayLineaSinPrecio, List<string> errores, List<string> advertencias)
+        private static CuerpoTraslado? MapearTraslado(CabeceraDocumento doc, int ind, bool hayLineaSinPrecio, List<string> errores)
         {
             var crudo = (doc.SiiCatTraslado ?? "").Trim().ToUpperInvariant();
             if (crudo.Length == 0)
             {
-                advertencias.Add("Guía sin U_SII_CatTraslado: se emite sin datos de traslado (Res. Ex. SII 144/2026 los exige desde el 2026-11-01)" +
-                    ((doc.SiiTransporte ?? "").Trim().Length > 0 ? "; U_SII_Transporte está obsoleto y no reemplaza a los UDF estructurados" : ""));
+                errores.Add("Guía de despacho sin datos de traslado: U_SII_CatTraslado (AUTOGESTIONADO, TERCERIZADO o REGIMEN_ESPECIAL) es obligatorio " +
+                    "y, según la categoría, U_SII_RutTrans, U_SII_RutChofer, U_SII_NomChofer, U_SII_Patente y U_SII_FchSalida; " +
+                    "la Res. Ex. SII 144/2026 los exige en toda guía desde el 2026-11-01" +
+                    ((doc.SiiTransporte ?? "").Trim().Length > 0 ? " (U_SII_Transporte está obsoleto y no los reemplaza)" : ""));
                 return null;
             }
             if (!Categorias.TryGetValue(crudo, out var categoria))

@@ -192,7 +192,7 @@ El plazo mostrado antes de `consultar-sii` es una **estimación** (recepción pr
 
 ## 9b. Guías de despacho con datos de traslado (Res. Ex. SII 144/2026)
 
-El set de pruebas del SII no trae datos de transporte, así que las guías del set se emiten sin bloque `traslado`. Para las guías reales (vigentes desde el 2026-11-01) use el bloque `traslado`; `$B` y `$K` como arriba:
+El set de pruebas del SII no trae datos de transporte, así que la herramienta del set (`npm run certificacion:set`, `ejecutarSet`) emite sus guías sin bloque `traslado` **aunque `EXIGIR_TRASLADO_GUIAS=true`** (por defecto): pasa la opción interna `omitirExigenciaTraslado` al servicio de emisión, que no existe en la API HTTP. Cualquier otra guía de la empresa en certificación (las reales también se prueban aquí) sí debe traer el bloque `traslado`; sin él responde 422 `DOCUMENTO_INVALIDO` (campo `traslado`). Para las guías reales (vigentes desde el 2026-11-01) use el bloque `traslado`; `$B` y `$K` como arriba:
 
 ```bash
 # Autogestionada: todos los datos (origen por defecto = dirección de la empresa)

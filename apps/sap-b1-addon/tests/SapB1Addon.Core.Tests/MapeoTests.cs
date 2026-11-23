@@ -112,7 +112,7 @@ namespace SapB1Addon.Core.Tests
         [Fact]
         public void Tipo_52_guia_con_traslado_sin_forma_de_pago_y_transporte_en_origen()
         {
-            var c = Mapear(new DocumentoFalso(Datos.Guia()));
+            var c = Mapear(new DocumentoFalso(Datos.GuiaConTraslado()));
             Assert.Equal(52, c.IdDoc.TipoDte);
             Assert.Equal(1, c.IdDoc.IndTraslado);
             Assert.Null(c.IdDoc.FormaPago);

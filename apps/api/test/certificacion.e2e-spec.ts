@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { Test } from '@nestjs/testing';
 import type { DataSource } from 'typeorm';
 import { AppModule } from '../src/app.module.js';
+import { siiConfig } from '../src/config/sii.config.js';
 import { CertificadosService } from '../src/certificados/certificados.service.js';
 import { Certificado } from '../src/certificados/entities/certificado.entity.js';
 import { parsearComprasSet, parsearSet } from '../src/certificacion/index.js';
@@ -33,6 +34,14 @@ import { crearDsFixtures } from './helpers/fixtures.js';
 
 const hayDb = await postgresDisponible();
 
+const SET_GUIA = `SET GUIA - NUMERO DE ATENCION: 4321
+CASO 4321-1
+DOCUMENTO	GUIA DE DESPACHO ELECTRONICA
+TRASLADO	OPERACION CONSTITUYE VENTA
+ITEM	CANTIDAD	PRECIO UNITARIO
+Cajón AFECTO	10	1000
+`;
+
 const SET = `SET BASICO - NUMERO DE ATENCION: 4321
 CASO 4321-1
 DOCUMENTO\tFACTURA ELECTRONICA
@@ -52,6 +61,7 @@ describe.skipIf(!hayDb)('Herramienta del set de pruebas (e2e, con DB)', () => {
   let ds: DataSource;
   let empresaId: string;
   let carpeta: string;
+  let cfgSii: { exigirTrasladoGuias: boolean };
   const rut = rutAleatorio((n) => calcularDv(n));
   const sii = crearSiiSimulado();
 
@@ -66,6 +76,7 @@ describe.skipIf(!hayDb)('Herramienta del set de pruebas (e2e, con DB)', () => {
       await ds.destroy();
       await m.close();
     };
+    cfgSii = m.get<{ exigirTrasladoGuias: boolean }>(siiConfig.KEY);
     svc = {
       ejecutor: m.get(EjecutorEmpresa),
       empresas: m.get(EmpresasService),
@@ -93,7 +104,7 @@ describe.skipIf(!hayDb)('Herramienta del set de pruebas (e2e, con DB)', () => {
       .get(CertificadosService)
       .cargar(rut.texto, generarPfxPrueba('x', { rut: '12345678-5' }), 'x');
     const folios = m.get(FoliosService);
-    for (const tipo of [33, 61]) {
+    for (const tipo of [33, 52, 61]) {
       const xml = generarCafRealista({ tipoDte: tipo, folioDesde: 1, folioHasta: 20, rutEmisor: rut.texto });
       await folios.registrarCaf(empresaId, {
         tipoDte: tipo, folioDesde: 1, folioHasta: 20,
@@ -138,6 +149,27 @@ describe.skipIf(!hayDb)('Herramienta del set de pruebas (e2e, con DB)', () => {
     expect(await ds.getRepository(Documento).count({ where: { empresaId } })).toBe(0);
     const caf = await ds.getRepository(Caf).findOneByOrFail({ empresaId, tipoDte: 33 });
     expect(caf.folioSiguiente).toBe(1);
+  });
+
+  it('el set emite guías (52) sin datos de transporte aunque EXIGIR_TRASLADO_GUIAS sea true', async () => {
+    expect(cfgSii.exigirTrasladoGuias).toBe(true);
+    const r = await ejecutarSet(svc, parsearSet(SET_GUIA), {
+      rutEmpresa: rut.texto,
+      simular: true,
+      carpetaSalida: carpeta,
+    });
+    expect(r.documentos.map((d) => [d.caso, d.tipoDte, d.folio])).toEqual([['4321-1', 52, 1]]);
+    expect(existsSync(join(carpeta, '4321-1_T52_F1.pdf'))).toBe(true);
+    // Fuera del set, la misma guía sin traslado se rechaza.
+    await expect(
+      comoSistema(() =>
+        svc.documentos.emitir(rut.texto, {
+          idDoc: { tipoDte: 52, indTraslado: 1 },
+          receptor: { rut: '12345678-5', razonSocial: 'CLIENTE', giro: 'Comercio', direccion: 'Calle 1', comuna: 'Santiago', ciudad: 'Santiago' },
+          detalle: [{ nombre: 'Cajón', cantidad: 1, precioUnitario: 1000 }],
+        }),
+      ),
+    ).rejects.toMatchObject({ name: 'ErrorValidacionDte', campo: 'traslado' });
   });
 
   it('modo real: emite, envía un solo sobre y es idempotente al repetir', async () => {

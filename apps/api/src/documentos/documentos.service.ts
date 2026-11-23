@@ -263,6 +263,12 @@ export function fusionarTraslado(
   return r;
 }
 
+/** Opciones internas de emisión: NO forman parte del DTO HTTP público. */
+export interface OpcionesEmision {
+  /** Emite guías (52) sin bloque `traslado` aunque `EXIGIR_TRASLADO_GUIAS` sea true (set de pruebas del SII). */
+  omitirExigenciaTraslado?: boolean;
+}
+
 export interface ResultadoEmision {
   documento: Documento;
   /** true si la `Idempotency-Key` ya existía: se devuelve el documento original sin emitir otro. */
@@ -290,6 +296,7 @@ export class DocumentosService {
     rutEmpresa: string,
     dto: EmitirDocumentoDto,
     claveIdempotencia?: string,
+    opciones: OpcionesEmision = {},
   ): Promise<{ resultado: ResultadoEmision; empresa: Empresa }> {
     const empresa = await this.empresas.obtenerPorRut(rutEmpresa);
     const huella = huellaSolicitud(dto);
@@ -315,7 +322,12 @@ export class DocumentosService {
         const caf = parsearCaf(asignado.xmlCaf);
         const construido = construirDte(
           armarDocumento(empresa, dto, asignado.folio, fechaEmision),
-          { caf, certificado, permitirIndTrasladoRes144: this.configSii.permitirIndTrasladoRes144 },
+          {
+            caf,
+            certificado,
+            permitirIndTrasladoRes144: this.configSii.permitirIndTrasladoRes144,
+            exigirTrasladoGuias: this.configSii.exigirTrasladoGuias && !opciones.omitirExigenciaTraslado,
+          },
         );
         const t = construido.totales;
         return em.save(

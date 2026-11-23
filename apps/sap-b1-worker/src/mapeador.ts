@@ -309,7 +309,7 @@ export function mapearDocumento(entidad: EntidadB1, doc: DocumentoB1, ctx: Conte
       );
     } else {
       idDoc.indTraslado = ind;
-      const t = mapearTraslado(doc, ind, detalle.some((d) => !(d.precioUnitario > 0)), errores, advertencias);
+      const t = mapearTraslado(doc, ind, detalle.some((d) => !(d.precioUnitario > 0)), errores);
       if (t) traslado = t;
     }
   }
@@ -366,7 +366,7 @@ function valorUdf(v: string | null | undefined): { dato?: string; marca?: 'difer
 
 /**
  * Arma el bloque `traslado` de la guía desde los UDF estructurados de `ODLN` (Res. Ex. SII 144/2026). Sin
- * `U_SII_CatTraslado` no hay bloque (la guía se emite como antes, con advertencia). En `TERCERIZADO` los campos
+ * `U_SII_CatTraslado` la guía se rechaza antes de llamar a la API (la Res. 144 exige el transporte en toda guía). En `TERCERIZADO` los campos
  * de transporte vacíos se informan como diferidos; "DIFERIDO"/"SIN DATO" escritos en el UDF los fuerzan.
  * El destino sale de la dirección de entrega del documento. La API repite las validaciones de fondo.
  */
@@ -375,13 +375,14 @@ function mapearTraslado(
   ind: number,
   hayLineaSinPrecio: boolean,
   errores: string[],
-  advertencias: string[],
 ): CuerpoTraslado | undefined {
   const crudo = (doc.U_SII_CatTraslado ?? '').trim().toUpperCase();
   if (!crudo) {
-    advertencias.push(
-      'Guía sin U_SII_CatTraslado: se emite sin datos de traslado (Res. Ex. SII 144/2026 los exige desde el 2026-11-01)' +
-        ((doc.U_SII_Transporte ?? '').trim() ? '; U_SII_Transporte está obsoleto y no reemplaza a los UDF estructurados' : ''),
+    errores.push(
+      'Guía de despacho sin datos de traslado: U_SII_CatTraslado (AUTOGESTIONADO, TERCERIZADO o REGIMEN_ESPECIAL) es obligatorio ' +
+        'y, según la categoría, U_SII_RutTrans, U_SII_RutChofer, U_SII_NomChofer, U_SII_Patente y U_SII_FchSalida; ' +
+        'la Res. Ex. SII 144/2026 los exige en toda guía desde el 2026-11-01' +
+        ((doc.U_SII_Transporte ?? '').trim() ? ' (U_SII_Transporte está obsoleto y no los reemplaza)' : ''),
     );
     return undefined;
   }

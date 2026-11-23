@@ -72,6 +72,25 @@ function rechaza(doc: DocumentoDte, campo: string, extra: Partial<OpcionesConstr
   throw new Error(`Se esperaba ErrorValidacionDte en ${campo}`);
 }
 
+describe('Res. 144: exigencia del bloque traslado en la guía (exigirTrasladoGuias)', () => {
+  it('rechaza una guía sin traslado y cita la resolución', () => {
+    const err = rechaza(guia(null), 'traslado', { exigirTrasladoGuias: true });
+    expect(err.message).toContain('Res. Ex. SII 144/2026');
+    expect(err.message).toContain('categoria');
+  });
+  it('sin la exigencia (por defecto) la guía sin traslado se construye', () => {
+    xsdValido(construir(guia(null)));
+    xsdValido(construir(guia(null), { exigirTrasladoGuias: false }));
+  });
+  it('con traslado presente aplica las validaciones por categoría de siempre', () => {
+    xsdValido(construir(guia(), { exigirTrasladoGuias: true }));
+    rechaza(guia({ patente: undefined }), 'traslado.patente', { exigirTrasladoGuias: true });
+  });
+  it('no afecta a las facturas sin traslado', () => {
+    xsdValido(construir(documentoDePrueba(33, 11), { exigirTrasladoGuias: true }));
+  });
+});
+
 describe('Res. 144: transporte autogestionado', () => {
   it('arma Transporte en el orden del XSD, normaliza patentes y valida contra DTE_v10.xsd', () => {
     const dte = construir(guia());

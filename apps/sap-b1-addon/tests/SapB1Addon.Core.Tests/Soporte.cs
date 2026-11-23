@@ -101,6 +101,23 @@ namespace SapB1Addon.Core.Tests
             SiiIndTraslado = "1",
             SiiTransporte = "Patente AB1234; chofer Juan",
         };
+
+        /// <summary>Guía con los datos de transporte mínimos de una categoría autogestionada (Res. Ex. SII 144/2026).</summary>
+        public static CabeceraDocumento GuiaConTraslado(int docEntry = 300)
+        {
+            var g = Guia(docEntry);
+            g.SiiCatTraslado = "AUTOGESTIONADO";
+            g.SiiRutTrans = "76.543.210-3";
+            g.SiiRutChofer = "11.222.333-9";
+            g.SiiNomChofer = "Juan Pérez Soto";
+            g.SiiPatente = "BCDF12";
+            g.SiiFchSalida = new DateTime(2026, 11, 23);
+            g.EntregaCalle = "Los Leones";
+            g.EntregaNumero = "99";
+            g.EntregaComuna = "Ñuñoa";
+            g.EntregaCiudad = "Santiago";
+            return g;
+        }
     }
 
     public class DocumentoFalso : IDocumentoB1

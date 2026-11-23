@@ -138,6 +138,11 @@ export interface TrasladoNormalizado {
 export interface OpcionesTraslado {
   /** Acepta `IndTraslado` 10-12 (el XSD oficial aún no los enumera). Por defecto `false`. */
   permitirIndTrasladoRes144?: boolean;
+  /**
+   * Exige el bloque `traslado` en toda guía de despacho (52): la Res. 144/2026, vigente desde el 2026-11-01, obliga a
+   * informar los datos de transporte. Por defecto `false` (el núcleo no impone política; la fija `EXIGIR_TRASLADO_GUIAS`).
+   */
+  exigirTrasladoGuias?: boolean;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -251,6 +256,13 @@ export function normalizarTraslado(doc: DocumentoDte, opciones: OpcionesTraslado
   if (!t) {
     if (ind !== undefined && IND_TRASLADO_PENDIENTE_XSD.includes(ind)) {
       error(`IndTraslado ${ind} exige el bloque traslado (Res. 144 resolutivos 5° y 7°)`, 'traslado');
+    }
+    if (tipo === 52 && opciones.exigirTrasladoGuias) {
+      error(
+        'la guía de despacho debe informar los datos de transporte en el bloque traslado (Res. Ex. SII 144/2026, vigente desde el 1-nov-2026): ' +
+          'falta categoria (autogestionado, tercerizado o regimen_especial) y, según ella, transportista, chofer, patente, fecha de salida y destino',
+        'traslado',
+      );
     }
     return undefined;
   }

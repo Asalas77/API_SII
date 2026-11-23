@@ -140,12 +140,12 @@ namespace SapB1Addon.Core.Tests
         {
             foreach (var malo in new string?[] { null, "", "0", "13", "x" })
             {
-                var cab = Datos.Guia();
+                var cab = Datos.GuiaConTraslado();
                 cab.SiiIndTraslado = malo;
                 var r = Validar(new DocumentoFalso(cab));
                 Assert.Contains(r.Errores, e => e.Contains("U_SII_IndTraslado"));
             }
-            var ok = Validar(new DocumentoFalso(Datos.Guia()));
+            var ok = Validar(new DocumentoFalso(Datos.GuiaConTraslado()));
             Assert.True(ok.Ok, string.Join("; ", ok.Errores));
             Assert.Equal(1, ok.Cuerpo!.IdDoc.IndTraslado);
         }

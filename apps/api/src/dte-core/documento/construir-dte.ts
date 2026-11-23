@@ -46,6 +46,8 @@ export interface OpcionesConstruirDte {
    * (DTE_v10.xsd de 2026-02-19) solo enumera 1 a 9 y el SII no ha publicado el formato de la GDT/ATT.
    */
   permitirIndTrasladoRes144?: boolean;
+  /** Exige el bloque `traslado` en las guías de despacho (52), Res. Ex. SII 144/2026. Por defecto `false`. */
+  exigirTrasladoGuias?: boolean;
 }
 
 /**
@@ -126,6 +128,7 @@ function validarDocumento(
   caf: Caf,
   validarVigenciaCaf: boolean,
   permitirIndTrasladoRes144: boolean,
+  exigirTrasladoGuias: boolean,
 ): TrasladoNormalizado | undefined {
   const { idDoc, emisor, receptor } = doc;
   const tipo = idDoc.tipoDte;
@@ -277,7 +280,7 @@ function validarDocumento(
   }
 
   // Traslado (Res. Ex. SII 144/2026): valida IndTraslado 1-12, categoría y datos de transporte.
-  return normalizarTraslado(doc, { permitirIndTrasladoRes144 });
+  return normalizarTraslado(doc, { permitirIndTrasladoRes144, exigirTrasladoGuias });
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -503,6 +506,7 @@ export function construirDte(doc: DocumentoDte, opciones: OpcionesConstruirDte):
     caf,
     opciones.validarVigenciaCaf ?? true,
     opciones.permitirIndTrasladoRes144 ?? false,
+    opciones.exigirTrasladoGuias ?? false,
   );
   const totales = calcularTotales(doc);
   const tipo = doc.idDoc.tipoDte;

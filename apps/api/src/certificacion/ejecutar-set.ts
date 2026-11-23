@@ -146,6 +146,8 @@ async function ejecutarSetEnContexto(
         o.rutEmpresa,
         dto,
         o.simular ? undefined : `${prefijo}-${caso.id}`,
+        // El set del SII no trae datos de transporte: exento de EXIGIR_TRASLADO_GUIAS.
+        { omitirExigenciaTraslado: true },
       );
       emitidos.set(caso.id, {
         tipoDte: r.documento.tipoDte,

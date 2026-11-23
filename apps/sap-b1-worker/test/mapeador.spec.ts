@@ -12,6 +12,7 @@ import {
   facturaExenta,
   facturaMixta,
   guia,
+  guiaConTraslado,
   linea,
   notaCredito,
   socio,
@@ -153,7 +154,7 @@ describe('mapeador B1 -> DTE', () => {
   });
 
   it('guía de despacho con IndTraslado: tipo 52, sin formaPago, transporte en origen', () => {
-    const r = ok(mapearDocumento(ODLN, guia(), ctx()));
+    const r = ok(mapearDocumento(ODLN, guiaConTraslado(), ctx()));
     expect(r.tipoDte).toBe(52);
     expect(r.cuerpo.idDoc.indTraslado).toBe(1);
     expect(r.cuerpo.idDoc.formaPago).toBeUndefined();
@@ -245,10 +246,10 @@ describe('guía de despacho: traslado Res. Ex. SII 144/2026', () => {
       ...extra,
     });
 
-  it('sin U_SII_CatTraslado no hay bloque traslado y avisa (U_SII_Transporte obsoleto)', () => {
-    const r = ok(mapearDocumento(ODLN, guia(), ctx()));
-    expect(r.cuerpo.traslado).toBeUndefined();
-    expect(r.advertencias.join(' ')).toMatch(/Res\. Ex\. SII 144.*obsoleto/);
+  it('sin U_SII_CatTraslado la guía se rechaza localmente (U_SII_Transporte obsoleto no la reemplaza)', () => {
+    const e = errores(mapearDocumento(ODLN, guia(), ctx())).join(' ');
+    expect(e).toMatch(/sin datos de traslado.*U_SII_CatTraslado.*Res\. Ex\. SII 144.*obsoleto/);
+    expect(errores(mapearDocumento(ODLN, guia({ U_SII_CatTraslado: '  ' }), ctx())).join(' ')).toMatch(/U_SII_CatTraslado/);
   });
 
   it('autogestionada: mapea los UDF estructurados y el destino desde la dirección de entrega', () => {

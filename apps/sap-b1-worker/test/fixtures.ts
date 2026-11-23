@@ -118,3 +118,16 @@ export const guia = (extra: Partial<DocumentoB1> = {}): DocumentoB1 =>
     DocumentLines: [linea(0, { Quantity: 5 })],
     ...extra,
   });
+
+/** Guía con los datos de transporte mínimos de una categoría autogestionada (Res. Ex. SII 144/2026). */
+export const guiaConTraslado = (extra: Partial<DocumentoB1> = {}): DocumentoB1 =>
+  guia({
+    U_SII_CatTraslado: 'AUTOGESTIONADO',
+    U_SII_RutTrans: '76.543.210-3',
+    U_SII_RutChofer: '11.222.333-9',
+    U_SII_NomChofer: 'Juan Pérez Soto',
+    U_SII_Patente: 'BCDF12',
+    U_SII_FchSalida: '2026-11-23T00:00:00',
+    AddressExtension: { ShipToStreet: 'Los Leones', ShipToStreetNo: '99', ShipToCounty: 'Ñuñoa', ShipToCity: 'Santiago' },
+    ...extra,
+  });

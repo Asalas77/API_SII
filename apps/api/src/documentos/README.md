@@ -39,7 +39,7 @@ Reglas: nunca se degrada `aceptado_con_reparos` a `aceptado`; un estado de parti
 
 ## Traslado (Res. Ex. SII 144/2026)
 
-`EmitirDocumentoDto` acepta el bloque `traslado` (ver `documentos.dto.ts`; reglas en `src/dte-core/README.md`), `idDoc.indTraslado` 1 a 12 (`traslado.indTraslado` es un alias), `detalle[].peso`/`volumen`, `detalle[].precioUnitario` opcional en guías y traslados, y `referencias[].rutOtroContribuyente`. Los errores de negocio responden 422 `DOCUMENTO_INVALIDO` con `errors[{campo, mensaje}]`.
+`EmitirDocumentoDto` acepta el bloque `traslado` (ver `documentos.dto.ts`; reglas en `src/dte-core/README.md`), `idDoc.indTraslado` 1 a 12 (`traslado.indTraslado` es un alias), `detalle[].peso`/`volumen`, `detalle[].precioUnitario` opcional en guías y traslados, y `referencias[].rutOtroContribuyente`. Toda guía (52) debe traer `traslado` mientras `EXIGIR_TRASLADO_GUIAS=true` (por defecto): sin él, 422 `DOCUMENTO_INVALIDO` con `errors[0].campo = traslado`; en facturas sigue siendo opcional. Los errores de negocio responden 422 `DOCUMENTO_INVALIDO` con `errors[{campo, mensaje}]`.
 
 - Columnas nuevas de `documentos` (migración `1795700000000-TrasladoDocumento`): `traslado` (jsonb: traslado normalizado + `solicitud` original; la API devuelve `traslado` sin la solicitud) y `traslado_pendiente` (boolean). La respuesta de documento trae `trasladoPendiente` y `traslado`.
 - `GET /v1/empresas/{rut}/documentos?trasladoPendiente=true[&tipo=52][&limite=50]` lista (más recientes primero; máx. 200).

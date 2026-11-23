@@ -4,6 +4,7 @@ import request from 'supertest';
 import type { DataSource } from 'typeorm';
 import { AppModule } from '../src/app.module.js';
 import { configurarApp } from '../src/app.setup.js';
+import { siiConfig } from '../src/config/sii.config.js';
 import { Certificado } from '../src/certificados/entities/certificado.entity.js';
 import { Documento } from '../src/documentos/entities/documento.entity.js';
 import { calcularDv, desdeIso88591, validarXsd } from '../src/dte-core/index.js';
@@ -153,6 +154,31 @@ describe.skipIf(!hayDb)('Traslado Res. Ex. SII 144/2026 (e2e, con DB)', () => {
       .send(guia(traslado({ patente: 'XX' })))
       .expect(422);
     expect(malo.body.errors[0].campo).toBe('traslado.patente');
+  });
+
+  it('guía sin bloque traslado: 422 DOCUMENTO_INVALIDO con EXIGIR_TRASLADO_GUIAS=true (por defecto)', async () => {
+    const { traslado: _omitido, ...sinTraslado } = guia(traslado());
+    const r = await http().post(`${base}/documentos`).send(sinTraslado).expect(422);
+    expect(r.body.code).toBe('DOCUMENTO_INVALIDO');
+    expect(r.body.errors[0].campo).toBe('traslado');
+    expect(r.body.detail).toContain('Res. Ex. SII 144/2026');
+    // Una factura sin traslado sigue siendo válida.
+    await http()
+      .post(`${base}/documentos`)
+      .send({ idDoc: { tipoDte: 33 }, receptor, detalle: [{ nombre: 'Servicio', cantidad: 1, precioUnitario: 1000 }] })
+      .expect(201);
+  });
+
+  it('guía sin bloque traslado: se emite con EXIGIR_TRASLADO_GUIAS=false', async () => {
+    const cfg = app.get<{ exigirTrasladoGuias: boolean }>(siiConfig.KEY);
+    const { traslado: _omitido, ...sinTraslado } = guia(traslado());
+    cfg.exigirTrasladoGuias = false;
+    try {
+      const r = await http().post(`${base}/documentos`).send(sinTraslado).expect(201);
+      expect(r.body).toMatchObject({ tipoDte: 52, trasladoPendiente: false, traslado: null });
+    } finally {
+      cfg.exigirTrasladoGuias = true;
+    }
   });
 
   let idPendiente = '';

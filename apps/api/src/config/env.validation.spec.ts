@@ -27,3 +27,11 @@ describe('validación del rol de aplicación', () => {
     ).toBeUndefined();
   });
 });
+
+describe('EXIGIR_TRASLADO_GUIAS (Res. Ex. SII 144/2026)', () => {
+  it('es true por defecto y acepta false', () => {
+    expect(envValidationSchema.validate({ ...base }).value.EXIGIR_TRASLADO_GUIAS).toBe(true);
+    expect(envValidationSchema.validate({ ...base, EXIGIR_TRASLADO_GUIAS: 'false' }).value.EXIGIR_TRASLADO_GUIAS).toBe(false);
+    expect(envValidationSchema.validate({ ...base, EXIGIR_TRASLADO_GUIAS: 'quizas' }).error).toBeDefined();
+  });
+});

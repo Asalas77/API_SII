@@ -46,6 +46,15 @@ describe.skipIf(!hayDb)('Libros electrónicos IECV y guías por la API /v1 (e2e,
     comuna: 'Santiago',
     ciudad: 'Santiago',
   });
+  // Res. Ex. SII 144/2026: toda guía (52) lleva datos de transporte (EXIGIR_TRASLADO_GUIAS=true por defecto).
+  const traslado = {
+    categoria: 'autogestionado',
+    destino: { direccion: 'Los Leones 99', comuna: 'Ñuñoa', ciudad: 'Santiago' },
+    fechaSalida: '2026-11-23',
+    transportista: { rut: '76543210-3' },
+    chofer: { rut: '11222333-9', nombre: 'Juan Pérez Soto' },
+    patente: 'BCDF12',
+  };
   const emitir = async (cuerpo: Record<string, unknown>) => (await http().post(`${base}/documentos`).send(cuerpo).expect(201)).body;
   const descargar = async (id: string): Promise<string> => {
     const r = await http()
@@ -148,12 +157,14 @@ describe.skipIf(!hayDb)('Libros electrónicos IECV y guías por la API /v1 (e2e,
     });
     await emitir({
       idDoc: { tipoDte: 52, indTraslado: 1 },
+      traslado,
       receptor: receptor('12345678-5'),
       detalle: [{ nombre: 'Mercadería', cantidad: 1, precioUnitario: 1000 }],
       referencias: [{ tipoDocRef: '33', folioRef: 1 }],
     });
     await emitir({
       idDoc: { tipoDte: 52, indTraslado: 5 },
+      traslado,
       receptor: receptor('12345678-5'),
       detalle: [{ nombre: 'Traslado interno', cantidad: 3, precioUnitario: 100 }],
     });
