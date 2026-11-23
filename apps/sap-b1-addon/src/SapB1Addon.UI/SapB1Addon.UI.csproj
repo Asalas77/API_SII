@@ -1,0 +1,63 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Capa SAP (UI API + DI API). Ejecutable .NET Framework 4.8 x64 que B1 10.0 lanza como add-on.
+
+    Referencia las DLL de interop del SDK de SAP por la propiedad MSBuild SapB1SdkDir:
+      dotnet build SapB1Addon.sln -p:SapB1SdkDir="C:\Program Files\SAP\SAP Business One SDK\Lib"
+    (o la variable de entorno SAPB1_SDK_DIR). Sin ella el proyecto NO compila código: solo emite un
+    mensaje, para que `dotnet build` / `dotnet test` de la solución funcionen en máquinas sin SDK de SAP.
+  -->
+  <PropertyGroup>
+    <SapB1SdkDir Condition="'$(SapB1SdkDir)' == ''">$(SAPB1_SDK_DIR)</SapB1SdkDir>
+    <UiHabilitada Condition="'$(SapB1SdkDir)' != ''">true</UiHabilitada>
+    <UiHabilitada Condition="'$(SapB1SdkDir)' == ''">false</UiHabilitada>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <RootNamespace>SapB1Addon.UI</RootNamespace>
+    <AssemblyName>SapB1Addon</AssemblyName>
+    <PlatformTarget>x64</PlatformTarget>
+    <Prefer32Bit>false</Prefer32Bit>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <AssemblyTitle>Add-on SII para SAP Business One</AssemblyTitle>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(UiHabilitada)' == 'true'">
+    <OutputType>WinExe</OutputType>
+    <!-- Sin ventana propia: el add-on vive mientras viva el cliente B1 (ver Programa.cs). -->
+  </PropertyGroup>
+
+  <!-- Sin SDK: biblioteca vacía (no compila ningún .cs). -->
+  <PropertyGroup Condition="'$(UiHabilitada)' != 'true'">
+    <OutputType>Library</OutputType>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <NoWarn>$(NoWarn);NU1701;CS2008</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(UiHabilitada)' == 'true'">
+    <ProjectReference Include="..\SapB1Addon.Core\SapB1Addon.Core.csproj" />
+    <Reference Include="System.Security" />
+    <Reference Include="System.Windows.Forms" />
+    <Reference Include="System.Net.Http" />
+    <Reference Include="Interop.SAPbouiCOM">
+      <HintPath>$(SapB1SdkDir)\Interop.SAPbouiCOM.dll</HintPath>
+      <EmbedInteropTypes>False</EmbedInteropTypes>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="Interop.SAPbobsCOM">
+      <HintPath>$(SapB1SdkDir)\Interop.SAPbobsCOM.dll</HintPath>
+      <EmbedInteropTypes>False</EmbedInteropTypes>
+      <Private>True</Private>
+    </Reference>
+  </ItemGroup>
+
+  <Target Name="AvisoUiOmitida" BeforeTargets="CoreCompile" Condition="'$(UiHabilitada)' != 'true'">
+    <Message Importance="high" Text="SapB1Addon.UI omitido: SapB1SdkDir no esta definido. Compile con -p:SapB1SdkDir=&quot;C:\Program Files\SAP\SAP Business One SDK\Lib&quot; (carpeta con Interop.SAPbouiCOM.dll e Interop.SAPbobsCOM.dll)." />
+  </Target>
+</Project>

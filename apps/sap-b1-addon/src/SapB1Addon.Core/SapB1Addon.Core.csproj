@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Núcleo testeable: sin referencias a SAP. netstandard2.0 para que lo consuma el add-on net48 y las pruebas net11. -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <RootNamespace>SapB1Addon.Core</RootNamespace>
+    <AssemblyName>SapB1Addon.Core</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="System.Text.Json" Version="8.0.5" />
+  </ItemGroup>
+</Project>

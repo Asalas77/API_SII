@@ -1,6 +1,6 @@
 # 14 - Integración con SAP Business One
 
-Estado: **Fase 1 implementada (`apps/sap-b1-worker`, ver su README); fase 2 (add-on UI API) pendiente.** Base: sección 5 de `docs/01-opciones-arquitectura-y-pruebas.md`. Dependencias: la API `/v1` de documentos y envíos (doc 09), que ya existe (`apps/api`) y usa `dte-core` y `sii-gateway`. La fase 1 se probó sólo contra un Service Layer y una API **simulados**; nada se ha ejecutado aún contra un B1 real. Los puntos tomados de fuentes secundarias o no confirmados con el partner están marcados *(verificar)*.
+Estado: **Fase 1 implementada (`apps/sap-b1-worker`, ver su README). Fase 2 (add-on UI API/DI API en C#, `apps/sap-b1-addon`) implementada en código, sin compilar ni probar contra un B1 real: el núcleo se prueba con fakes; la capa SAP nunca se compiló contra el SDK.** Base: sección 5 de `docs/01-opciones-arquitectura-y-pruebas.md`. Dependencias: la API `/v1` de documentos y envíos (doc 09), que ya existe (`apps/api`) y usa `dte-core` y `sii-gateway`. La fase 1 se probó sólo contra un Service Layer y una API **simulados**; nada se ha ejecutado aún contra un B1 real. Los puntos tomados de fuentes secundarias o no confirmados con el partner están marcados *(verificar)*.
 
 Diferencias entre este diseño y lo implementado en la fase 1:
 - **No hay webhooks** en la API: el worker sondea (`POST /v1/documentos/:id/consultar-estado`), con un intervalo mínimo por documento.
