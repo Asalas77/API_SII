@@ -28,6 +28,10 @@ namespace SapB1Addon.Core.Modelos
         /// <summary>Exigir giro, dirección y comuna del receptor en facturas 33/34 (el worker solo advierte).</summary>
         public bool ExigirDatosReceptor { get; set; } = true;
         public int TimeoutSegundos { get; set; } = 30;
+        /// <summary>Código de la moneda local de B1: una exportación debe emitirse en otra moneda (B1_MONEDA_LOCAL del worker).</summary>
+        public string MonedaLocal { get; set; } = "CLP";
+        /// <summary>Código de moneda de B1 -> glosa de moneda del SII, adicional a la tabla incorporada (B1_MONEDAS_SII del worker).</summary>
+        public Dictionary<string, string> MonedasSii { get; set; } = new Dictionary<string, string>();
 
         public override string ToString() =>
             "ConfiguracionAddon { ApiUrl = " + ApiUrl + ", RutEmpresa = " + RutEmpresa + ", ApiKey = " +

@@ -4,12 +4,14 @@ import { normalizarRut } from '../src/rut.js';
 import { ENTIDADES, type SocioB1 } from '../src/tipos-b1.js';
 import {
   baseConFolio,
+  baseExportacionConFolio,
   baseSinFolio,
   boleta,
   configB1,
   facturaAfecta,
   facturaConDescuentoCabecera,
   facturaExenta,
+  facturaExportacion,
   facturaMixta,
   guia,
   guiaConTraslado,
@@ -17,6 +19,7 @@ import {
   notaCredito,
   socio,
   socioConsumidorFinal,
+  socioExtranjero,
 } from './fixtures.js';
 
 const [OINV, ORIN, ODLN] = ENTIDADES as [(typeof ENTIDADES)[0], (typeof ENTIDADES)[1], (typeof ENTIDADES)[2]];
@@ -323,5 +326,118 @@ describe('guía de despacho: traslado Res. Ex. SII 144/2026', () => {
     expect(ok11.cuerpo.idDoc.indTraslado).toBe(11);
     expect(ok11.cuerpo.traslado?.descripcionProlongado).toBe('Distancia Arica-Santiago');
     expect(errores(mapearDocumento(ODLN, completa({ U_SII_IndTraslado: '13' }), ctx())).join(' ')).toMatch(/1 a 12/);
+  });
+});
+
+describe('exportación 110, 111 y 112', () => {
+  it('factura de exportación: moneda, tipo de cambio, receptor extranjero sin RUT y datos de Aduana', () => {
+    const r = ok(mapearDocumento(OINV, facturaExportacion(), ctx(socioExtranjero())));
+    expect(r.tipoDte).toBe(110);
+    expect(r.cuerpo.receptor).toEqual({ razonSocial: 'ACME IMPORT INC', direccion: '350 Fifth Avenue', ciudad: 'New York', correo: 'buyer@acme.example.com' });
+    expect(r.cuerpo.exportacion).toEqual({
+      moneda: 'DOLAR USA',
+      tipoCambio: 925.4567,
+      formaPagoExportacion: 11,
+      extranjero: { numId: 'US-12-3456789', nacionalidad: 225 },
+      aduana: {
+        codigoModalidadVenta: 1,
+        codigoClausulaVenta: 5,
+        totalClausulaVenta: 7192.83,
+        codigoViaTransporte: 1,
+        codigoPuertoEmbarque: 905,
+        codigoPuertoDesembarque: 134,
+        totalBultos: 151,
+        bultos: [{ codigoTipo: 10, cantidad: 151 }],
+        codigoPaisReceptor: 225,
+        codigoPaisDestino: 225,
+      },
+    });
+    // Precios en la moneda del documento, sin exento (todo es exento en exportación) y sin RUT.
+    expect(r.cuerpo.detalle[1]).toMatchObject({ cantidad: 50.5, precioUnitario: 52.3333, unidad: 'CJ' });
+    expect(r.cuerpo.detalle.some((d) => d.exento)).toBe(false);
+    expect(r.advertencias).toEqual([]);
+  });
+
+  it('moneda local, sin moneda, sin tipo de cambio o sin glosa SII: error; B1_MONEDAS_SII la define', () => {
+    expect(errores(mapearDocumento(OINV, facturaExportacion({ DocCurrency: 'CLP' }), ctx(socioExtranjero()))).join('|')).toContain('moneda extranjera');
+    expect(errores(mapearDocumento(OINV, facturaExportacion({ DocCurrency: null }), ctx(socioExtranjero())))[0]).toContain('DocCurrency');
+    expect(errores(mapearDocumento(OINV, facturaExportacion({ DocRate: 0 }), ctx(socioExtranjero())))[0]).toContain('DocRate');
+    const brl = facturaExportacion({ DocCurrency: 'BRL', DocumentLines: [linea(0, { Quantity: 1, UnitPrice: 10, Currency: 'BRL' })], DocTotalFC: 10, U_SII_TotClausula: '10' });
+    expect(errores(mapearDocumento(OINV, brl, ctx(socioExtranjero())))[0]).toContain('B1_MONEDAS_SII');
+    const conMapa: ContextoMapeo = { ...ctx(socioExtranjero()), config: { ...configB1, monedasSii: { BRL: 'OTRAS MONEDAS' } } };
+    expect(ok(mapearDocumento(OINV, brl, conMapa)).cuerpo.exportacion?.moneda).toBe('OTRAS MONEDAS');
+  });
+
+  it('la factura exige los UDF de Aduana (mensaje con el UDF exacto) salvo en servicios', () => {
+    const vacios = {
+      U_SII_ModVenta: null,
+      U_SII_ClausulaVenta: null,
+      U_SII_ViaTransp: null,
+      U_SII_PtoEmbarque: null,
+      U_SII_PtoDesemb: null,
+      U_SII_PaisReceptor: null,
+      U_SII_PaisDestino: null,
+      U_SII_TotBultos: null,
+    };
+    const e = errores(mapearDocumento(OINV, facturaExportacion(vacios), ctx(socioExtranjero()))).join('\n');
+    for (const udf of Object.keys(vacios)) expect(e).toContain(udf);
+    // Hotelería (4): sin cláusula, vía, puertos, destino ni bultos.
+    const hoteleria = facturaExportacion({ ...vacios, U_SII_PaisReceptor: '225', U_SII_IndServicio: '4', U_SII_TipoBulto: null });
+    const r = ok(mapearDocumento(OINV, hoteleria, ctx(socioExtranjero())));
+    expect(r.cuerpo.idDoc.indServicio).toBe(4);
+    expect(r.cuerpo.exportacion?.aduana).toEqual({ codigoPaisReceptor: 225 });
+    expect(errores(mapearDocumento(OINV, facturaExportacion({ U_SII_IndServicio: '2' }), ctx(socioExtranjero())))[0]).toContain('U_SII_IndServicio');
+  });
+
+  it('códigos no numéricos, línea en otra moneda y socio sin dirección: error', () => {
+    expect(errores(mapearDocumento(OINV, facturaExportacion({ U_SII_ViaTransp: 'MAR' }), ctx(socioExtranjero())))[0]).toContain('U_SII_ViaTransp');
+    const otraMoneda = facturaExportacion({ DocumentLines: [linea(0, { Quantity: 1, UnitPrice: 1, Currency: 'EUR' })] });
+    expect(errores(mapearDocumento(OINV, otraMoneda, ctx(socioExtranjero())))[0]).toContain('moneda de la línea');
+    expect(errores(mapearDocumento(OINV, facturaExportacion({ Address: null }), ctx(socioExtranjero({ BPAddresses: [] })))).join('|')).toContain('dirección en el extranjero');
+  });
+
+  it('total de la cláusula por UDF y advertencia si DocTotalFC no cuadra; descuento de cabecera sin exento', () => {
+    const doc = facturaExportacion({ U_SII_TotClausula: '7000,5', DocTotalFC: 9999, DiscountPercent: 5 });
+    const r = ok(mapearDocumento(OINV, doc, ctx(socioExtranjero())));
+    expect(r.cuerpo.exportacion?.aduana?.totalClausulaVenta).toBe(7000.5);
+    expect(r.cuerpo.descuentosRecargos).toEqual([{ tipo: 'D', glosa: 'Descuento', tipoValor: '%', valor: 5 }]);
+    expect(r.advertencias[0]).toContain('DocTotalFC');
+  });
+
+  it('nota de crédito 112 desde ORIN y nota de débito 111 desde OINV referencian la factura 110', () => {
+    const bases = new Map([[claveBase(13, 400), baseExportacionConFolio()]]);
+    const nc = notaCredito({
+      CardCode: 'C30000',
+      U_SII_TipoDTE: '112',
+      DocCurrency: 'USD',
+      DocRate: 930.12,
+      U_SII_PaisReceptor: '225',
+      DocumentLines: [linea(0, { Quantity: 10, UnitPrice: 45.5, PriceAfterVAT: null, BaseType: 13, BaseEntry: 400, BaseLine: 0 })],
+    });
+    const r = ok(mapearDocumento(ORIN, nc, ctx(socioExtranjero(), bases)));
+    expect(r.tipoDte).toBe(112);
+    expect(r.cuerpo.referencias).toEqual([
+      { tipoDocRef: '110', folioRef: 12, fechaRef: '2026-03-10', codRef: 1, razonRef: 'Anula factura por error de precio' },
+    ]);
+    expect(r.cuerpo.exportacion).toEqual({
+      moneda: 'DOLAR USA',
+      tipoCambio: 930.12,
+      extranjero: { numId: 'US-12-3456789', nacionalidad: 225 },
+      aduana: { codigoPaisReceptor: 225 },
+    });
+
+    const nd = facturaExportacion({
+      U_SII_TipoDTE: '111',
+      U_SII_TipoDocRef: '110',
+      U_SII_FolioRef: '12',
+      U_SII_CodRef: '3',
+      U_SII_RazonRef: 'Ajuste de precio',
+    });
+    const r2 = ok(mapearDocumento(OINV, nd, ctx(socioExtranjero())));
+    expect(r2.tipoDte).toBe(111);
+    expect(r2.cuerpo.referencias).toEqual([{ tipoDocRef: '110', folioRef: '12', codRef: 3, razonRef: 'Ajuste de precio' }]);
+    // 112 no corresponde a Invoices ni 111 a CreditNotes.
+    expect(errores(mapearDocumento(OINV, facturaExportacion({ U_SII_TipoDTE: '112' }), ctx(socioExtranjero())))[0]).toContain('no corresponde');
+    expect(errores(mapearDocumento(ORIN, { ...nc, U_SII_TipoDTE: '111' }, ctx(socioExtranjero(), bases)))[0]).toContain('no corresponde');
   });
 });

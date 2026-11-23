@@ -64,9 +64,12 @@ namespace SapB1Addon.Core
             return salida;
         }
 
-        /// <summary>Si el documento necesita leer documentos base (notas 61 y 56).</summary>
-        public static bool RequiereBases(CabeceraDocumento doc) =>
-            doc.ObjType == 14 || (doc.SiiTipoDte ?? "").Trim() == "56";
+        /// <summary>Si el documento necesita leer documentos base (notas 61, 56, 111 y 112).</summary>
+        public static bool RequiereBases(CabeceraDocumento doc)
+        {
+            var t = (doc.SiiTipoDte ?? "").Trim();
+            return doc.ObjType == 14 || t == "56" || t == "111" || t == "112";
+        }
 
         /// <summary>Tipo de DTE: <c>U_SII_TipoDTE</c> si está, o el derivado (OINV 33/34, ORIN 61, ODLN 52).</summary>
         public static bool ResolverTipo(CabeceraDocumento doc, Func<LineaDocumento, bool> esExenta, out int tipo, out string? error)
@@ -120,6 +123,7 @@ namespace SapB1Addon.Core
             }
             r.TipoDte = tipo;
             bool boleta = TiposDte.EsBoleta(tipo);
+            bool exportacion = TiposDte.EsExportacion(tipo);
 
             // Fechas
             var fechaEmision = Fecha(doc.DocDate);
@@ -146,6 +150,12 @@ namespace SapB1Addon.Core
                 if (!(l.Quantity > 0))
                 {
                     errores.Add(rf + ": la cantidad debe ser mayor que 0");
+                    continue;
+                }
+                if (exportacion && !string.IsNullOrWhiteSpace(l.Currency) && !string.IsNullOrWhiteSpace(doc.DocCurrency) &&
+                    l.Currency!.Trim() != doc.DocCurrency!.Trim())
+                {
+                    errores.Add(rf + ": la moneda de la línea (" + l.Currency!.Trim() + ") debe ser la del documento (" + doc.DocCurrency!.Trim() + ")");
                     continue;
                 }
                 bool exenta = esExenta(l);
@@ -190,18 +200,37 @@ namespace SapB1Addon.Core
                 if (unidad.Length > 0) d.Unidad = unidad;
                 var desc = l.DiscountPercent ?? 0;
                 if (desc > 0) d.DescuentoPorcentaje = Math.Min(desc, 100);
-                if (exenta || tipo == 34 || tipo == 41) d.Exento = true;
+                if (!exportacion && (exenta || tipo == 34 || tipo == 41)) d.Exento = true;
                 detalle.Add(d);
             }
 
             // Receptor
             CuerpoReceptor? receptor = null;
+            string? numIdExtranjero = null;
             var socio = ctx.Socio;
             var rutCrudo = (socio?.LicTradNum ?? "").Trim();
             var rutNorm = Rut.Normalizar(rutCrudo);
             if (socio == null)
             {
                 errores.Add("No se pudo leer el socio de negocios " + doc.CardCode);
+            }
+            else if (exportacion)
+            {
+                // Receptor extranjero: la API usa el RUT 55555555-5; LicTradNum es su identificador tributario en el país de origen.
+                var razon = Trunc(doc.CardName ?? socio.CardName, 100);
+                if (razon.Length == 0) errores.Add("El socio " + doc.CardCode + " no tiene nombre (CardName)");
+                receptor = new CuerpoReceptor { RazonSocial = razon };
+                var giro = Trunc(socio.Giro, 40);
+                if (giro.Length > 0) receptor.Giro = giro;
+                var dir = DireccionDe(socio, doc);
+                if (dir.Direccion.Length > 0) receptor.Direccion = dir.Direccion;
+                else if (tipo == 110) errores.Add("El socio " + doc.CardCode + " no tiene dirección en el extranjero (BPAddresses: Street)");
+                if (dir.Comuna.Length > 0) receptor.Comuna = dir.Comuna;
+                if (dir.Ciudad.Length > 0) receptor.Ciudad = dir.Ciudad;
+                var correo = Trunc(socio.EmailAddress, 80);
+                if (Regex.IsMatch(correo, @"^[^\s@]+@[^\s@]+\.[^\s@]+$")) receptor.Correo = correo;
+                var numId = Trunc(rutCrudo, 20);
+                if (numId.Length > 0) numIdExtranjero = numId;
             }
             else if (boleta && (rutCrudo.Length == 0 || rutNorm == Rut.Generico))
             {
@@ -270,15 +299,29 @@ namespace SapB1Addon.Core
             {
                 var valor = Math.Min(descGlobal, 100);
                 descuentos = new List<CuerpoDescuentoRecargo>();
-                if (hayAfecta && tipo != 34 && tipo != 41)
+                if (exportacion)
                     descuentos.Add(new CuerpoDescuentoRecargo { Tipo = "D", Glosa = "Descuento", TipoValor = "%", Valor = valor });
-                if (hayExenta || tipo == 34 || tipo == 41)
+                else if (hayAfecta && tipo != 34 && tipo != 41)
+                    descuentos.Add(new CuerpoDescuentoRecargo { Tipo = "D", Glosa = "Descuento", TipoValor = "%", Valor = valor });
+                if (!exportacion && (hayExenta || tipo == 34 || tipo == 41))
                     descuentos.Add(new CuerpoDescuentoRecargo { Tipo = "D", Glosa = "Descuento", TipoValor = "%", Valor = valor, Exento = true });
             }
 
             // Referencias (notas de crédito y débito)
             List<CuerpoReferencia>? referencias = null;
-            if (tipo == 61 || tipo == 56) referencias = ReferenciasDe(doc, ctx.Bases, errores);
+            if (tipo == 61 || tipo == 56 || tipo == 111 || tipo == 112) referencias = ReferenciasDe(doc, ctx.Bases, errores);
+
+            CuerpoExportacion? bloqueExportacion = null;
+            if (exportacion)
+            {
+                bloqueExportacion = MapearExportacion(doc, tipo, ctx.Config, numIdExtranjero, detalle, descuentos, errores, r.Advertencias);
+                var indServ = (doc.SiiIndServicio ?? "").Trim();
+                if (indServ.Length > 0)
+                {
+                    if (indServ == "3" || indServ == "4" || indServ == "5" || indServ == "6") idDoc.IndServicio = int.Parse(indServ, CultureInfo.InvariantCulture);
+                    else errores.Add("U_SII_IndServicio \"" + indServ + "\" inválido (3 a 6, solo exportación de servicios; vacío para bienes)");
+                }
+            }
 
             var origen = new Dictionary<string, object>
             {
@@ -294,11 +337,154 @@ namespace SapB1Addon.Core
 
             var cuerpo = new CuerpoDocumento { IdDoc = idDoc, Detalle = detalle, Origen = origen };
             if (traslado != null) cuerpo.Traslado = traslado;
+            if (bloqueExportacion != null) cuerpo.Exportacion = bloqueExportacion;
             if (receptor != null) cuerpo.Receptor = receptor;
             if (descuentos != null && descuentos.Count > 0) cuerpo.DescuentosRecargos = descuentos;
             if (referencias != null && referencias.Count > 0) cuerpo.Referencias = referencias;
             r.Cuerpo = cuerpo;
             return r;
+        }
+
+        /// <summary>
+        /// Código de moneda de B1 (ISO 4217) -> glosa de moneda del XSD del SII (<c>TipMonType</c>, SiiTypes_v10.xsd). Solo las
+        /// equivalencias inequívocas (igual que el worker); el resto se declara en <see cref="ConfiguracionAddon.MonedasSii"/>.
+        /// </summary>
+        public static readonly IReadOnlyDictionary<string, string> MonedasSii = new Dictionary<string, string>
+        {
+            { "USD", "DOLAR USA" }, { "EUR", "EURO" }, { "CAD", "DOLAR CAN" }, { "AUD", "DOLAR AUST" }, { "NZD", "DOLAR NZ" },
+            { "HKD", "DOLAR HK" }, { "SGD", "DOLAR SIN" }, { "GBP", "LIBRA EST" }, { "JPY", "YEN" }, { "ZAR", "RAND" },
+            { "MXN", "PESO MEX" }, { "COP", "PESO COL" }, { "UYU", "PESO URUG" }, { "BOB", "BOLIVIANO" }, { "PYG", "GUARANI" },
+            { "PEN", "NUEVO SOL" }, { "CNY", "RENMINBI" },
+        };
+
+        /// <summary>Código numérico de Aduana de un UDF (entero positivo); null si está vacío o es inválido (agrega el error).</summary>
+        private static int? CodigoUdf(string? v, string udf, List<string> errores)
+        {
+            var t = (v ?? "").Trim();
+            if (t.Length == 0) return null;
+            if (!Regex.IsMatch(t, @"^\d{1,4}$") || int.Parse(t, CultureInfo.InvariantCulture) <= 0)
+            {
+                errores.Add(udf + " \"" + t + "\" debe ser un código numérico de la tabla de Aduana correspondiente");
+                return null;
+            }
+            return int.Parse(t, CultureInfo.InvariantCulture);
+        }
+
+        /// <summary>
+        /// Port de <c>mapearExportacion</c> del worker: bloque <c>exportacion</c> desde DocCurrency/DocRate y los UDF de Aduana.
+        /// Los códigos se validan contra las tablas de Aduana en la API; aquí solo el formato y la presencia de lo que exige la
+        /// factura de exportación (formato DTE v2.5). Si difiere del worker, manda el worker.
+        /// </summary>
+        private static CuerpoExportacion? MapearExportacion(CabeceraDocumento doc, int tipo, ConfiguracionAddon cfg, string? numId,
+            List<CuerpoDetalle> detalle, List<CuerpoDescuentoRecargo>? descuentos, List<string> errores, List<string> advertencias)
+        {
+            int erroresAntes = errores.Count;
+            var codigoB1 = (doc.DocCurrency ?? "").Trim().ToUpperInvariant();
+            var locales = new HashSet<string> { (cfg.MonedaLocal ?? "CLP").Trim().ToUpperInvariant(), "$", "CLP" };
+            string moneda = "";
+            if (codigoB1.Length == 0) errores.Add("Exportación: DocCurrency (moneda del documento) es obligatoria");
+            else if (locales.Contains(codigoB1)) errores.Add("Exportación: el documento debe emitirse en moneda extranjera (DocCurrency es " + codigoB1 + ")");
+            else
+            {
+                string? glosa = null;
+                if (cfg.MonedasSii != null && cfg.MonedasSii.TryGetValue(codigoB1, out var g1)) glosa = g1;
+                else if (MonedasSii.TryGetValue(codigoB1, out var g2)) glosa = g2;
+                if (glosa != null) moneda = glosa;
+                else errores.Add("Exportación: la moneda " + codigoB1 + " no tiene glosa del SII; declárela en la configuración (p. ej. " + codigoB1 + "=OTRAS MONEDAS)");
+            }
+            decimal tipoCambio = doc.DocRate ?? 0m;
+            if (!(tipoCambio >= 0.0001m && tipoCambio <= 999999.9999m))
+                errores.Add("Exportación: DocRate (tipo de cambio en pesos) inválido (\"" + (doc.DocRate.HasValue ? doc.DocRate.Value.ToString(CultureInfo.InvariantCulture) : "") + "\")");
+
+            var nacionalidad = CodigoUdf(doc.SiiPaisReceptor, Udf.PaisReceptor, errores);
+            var mod = CodigoUdf(doc.SiiModVenta, Udf.ModVenta, errores);
+            var clausula = CodigoUdf(doc.SiiClausulaVenta, Udf.ClausulaVenta, errores);
+            var via = CodigoUdf(doc.SiiViaTransp, Udf.ViaTransp, errores);
+            var embarque = CodigoUdf(doc.SiiPtoEmbarque, Udf.PtoEmbarque, errores);
+            var desembarque = CodigoUdf(doc.SiiPtoDesemb, Udf.PtoDesemb, errores);
+            var destino = CodigoUdf(doc.SiiPaisDestino, Udf.PaisDestino, errores);
+            var tipoBulto = CodigoUdf(doc.SiiTipoBulto, Udf.TipoBulto, errores);
+            var formaPago = CodigoUdf(doc.SiiFormaPagoExp, Udf.FormaPagoExp, errores);
+            int? bultos = null;
+            var bultosCrudo = (doc.SiiTotBultos ?? "").Trim();
+            if (bultosCrudo.Length > 0)
+            {
+                if (int.TryParse(bultosCrudo, NumberStyles.None, CultureInfo.InvariantCulture, out var nb) && nb > 0) bultos = nb;
+                else errores.Add("U_SII_TotBultos \"" + bultosCrudo + "\" debe ser un entero positivo");
+            }
+            decimal? totalClausula = null;
+            var totCrudo = (doc.SiiTotClausula ?? "").Trim().Replace(',', '.');
+            if (totCrudo.Length > 0)
+            {
+                if (decimal.TryParse(totCrudo, NumberStyles.Number, CultureInfo.InvariantCulture, out var tc) && tc > 0) totalClausula = tc;
+                else errores.Add("U_SII_TotClausula \"" + totCrudo + "\" debe ser un monto mayor que cero");
+            }
+            else if (doc.DocTotalFc.HasValue && doc.DocTotalFc.Value > 0) totalClausula = Redondear(doc.DocTotalFc.Value, 2);
+
+            var servicio = (doc.SiiIndServicio ?? "").Trim();
+            bool sinClausula = servicio == "3" || servicio == "4" || servicio == "5";
+            if (tipo == 110)
+            {
+                void Falta(object? v, string udf, string descripcion)
+                {
+                    if (v == null) errores.Add("Factura de exportación: " + udf + " es obligatorio (" + descripcion + ")");
+                }
+                Falta(nacionalidad, Udf.PaisReceptor, "código de país del receptor, tabla de países de Aduana");
+                if (!sinClausula)
+                {
+                    Falta(mod, Udf.ModVenta, "modalidad de venta de Aduana");
+                    Falta(clausula, Udf.ClausulaVenta, "cláusula de compraventa de Aduana");
+                }
+                if (servicio != "4") Falta(via, Udf.ViaTransp, "vía de transporte de Aduana");
+                if (servicio.Length == 0)
+                {
+                    Falta(embarque, Udf.PtoEmbarque, "puerto de embarque de Aduana");
+                    Falta(desembarque, Udf.PtoDesemb, "puerto de desembarque de Aduana");
+                    Falta(destino, Udf.PaisDestino, "código de país de destino");
+                    Falta(bultos, Udf.TotBultos, "total de bultos");
+                }
+            }
+            else if (nacionalidad == null)
+            {
+                errores.Add("Nota de exportación: " + Udf.PaisReceptor + " es obligatorio (nacionalidad del receptor extranjero)");
+            }
+
+            // Contraste informativo con el total de B1 en la moneda del documento (B1 redondea a 2 decimales).
+            if (doc.DocTotalFc.HasValue && doc.DocTotalFc.Value > 0)
+            {
+                decimal bruto = detalle.Sum(d => d.Cantidad * d.PrecioUnitario * (1 - (d.DescuentoPorcentaje ?? 0) / 100m));
+                decimal global = descuentos == null ? 0m : descuentos.Sum(d => d.Valor);
+                decimal calculado = bruto * (1 - global / 100m);
+                if (Math.Abs(calculado - doc.DocTotalFc.Value) > 0.05m)
+                    advertencias.Add("El total calculado (" + Redondear(calculado, 4).ToString(CultureInfo.InvariantCulture) + ") difiere de DocTotalFC (" +
+                                     doc.DocTotalFc.Value.ToString(CultureInfo.InvariantCulture) + "): la API emite con los precios y cantidades de las líneas");
+            }
+
+            if (errores.Count > erroresAntes) return null;
+            var aduana = new CuerpoAduana();
+            bool hay = false;
+            if (mod.HasValue) { aduana.CodigoModalidadVenta = mod; hay = true; }
+            if (clausula.HasValue) { aduana.CodigoClausulaVenta = clausula; hay = true; }
+            if (totalClausula.HasValue && !sinClausula && clausula.HasValue) { aduana.TotalClausulaVenta = totalClausula; hay = true; }
+            if (via.HasValue) { aduana.CodigoViaTransporte = via; hay = true; }
+            if (embarque.HasValue) { aduana.CodigoPuertoEmbarque = embarque; hay = true; }
+            if (desembarque.HasValue) { aduana.CodigoPuertoDesembarque = desembarque; hay = true; }
+            if (bultos.HasValue)
+            {
+                aduana.TotalBultos = bultos;
+                hay = true;
+                if (tipoBulto.HasValue) aduana.Bultos = new List<CuerpoBulto> { new CuerpoBulto { CodigoTipo = tipoBulto.Value, Cantidad = bultos.Value } };
+            }
+            if (nacionalidad.HasValue) { aduana.CodigoPaisReceptor = nacionalidad; hay = true; }
+            if (destino.HasValue) { aduana.CodigoPaisDestino = destino; hay = true; }
+            return new CuerpoExportacion
+            {
+                Moneda = moneda,
+                TipoCambio = tipoCambio,
+                FormaPagoExportacion = formaPago,
+                Extranjero = new CuerpoExtranjero { NumId = numId, Nacionalidad = nacionalidad ?? 0 },
+                Aduana = hay ? aduana : null,
+            };
         }
 
         private static readonly Dictionary<string, string> Categorias = new Dictionary<string, string>

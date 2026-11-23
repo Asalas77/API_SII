@@ -144,3 +144,33 @@ describe('parsearComprasSet', () => {
     expect(() => parsearComprasSet('no es json')).toThrow(/inválido/);
   });
 });
+
+describe('documentos de exportación en el libro de ventas', () => {
+  const xmlExp = (tipo: number, refs = '') =>
+    `<DTE><Exportaciones><Encabezado><IdDoc><TipoDTE>${tipo}</TipoDTE><Folio>3</Folio></IdDoc>` +
+    '<Receptor><RUTRecep>55555555-5</RUTRecep><Extranjero><NumId>US-1</NumId><Nacionalidad>225</Nacionalidad></Extranjero></Receptor>' +
+    '<Totales><TpoMoneda>DOLAR USA</TpoMoneda><MntExe>7192.8317</MntExe><MntTotal>7192.8317</MntTotal></Totales></Encabezado>' +
+    `${refs}</Exportaciones></DTE>`;
+
+  it('informa montos en pesos (columnas), receptor extranjero y sin IVA', () => {
+    const d = documentoADetalleVenta(
+      base({ tipoDte: 110, rutReceptor: 55555555, dvReceptor: '5', montoNeto: 0, montoExento: 6656654, iva: 0, montoTotal: 6656654, xmlFirmado: xmlExp(110) }),
+    );
+    expect(d).toMatchObject({
+      tipoDoc: 110,
+      montoExento: 6656654,
+      montoIva: 0,
+      montoTotal: 6656654,
+      rutContraparte: '55555555-5',
+      extranjero: { numId: 'US-1', nacionalidad: '225' },
+    });
+    expect(d.montoNeto).toBeUndefined();
+    expect(d.tasaIva).toBeUndefined();
+  });
+
+  it('la nota 112 que anula (codRef 1) informa el documento anulado', () => {
+    const refs = '<Referencia><NroLinRef>1</NroLinRef><TpoDocRef>110</TpoDocRef><FolioRef>1</FolioRef><FchRef>2026-01-02</FchRef><CodRef>1</CodRef></Referencia>';
+    const d = documentoADetalleVenta(base({ tipoDte: 112, montoNeto: 0, montoExento: 100, iva: 0, montoTotal: 100, xmlFirmado: xmlExp(112, refs) }));
+    expect(d).toMatchObject({ tipoDoc: 112, tipoDocRef: 110, folioDocRef: 1 });
+  });
+});

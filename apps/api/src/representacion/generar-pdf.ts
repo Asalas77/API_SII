@@ -1,5 +1,15 @@
 import PDFDocument from 'pdfkit';
 import { DESCRIPCION_IND_TRASLADO } from '../dte-core/documento/traslado.js';
+import {
+  GLOSA_CLAUSULA,
+  GLOSA_FORMA_PAGO,
+  GLOSA_MODALIDAD,
+  GLOSA_PAIS,
+  GLOSA_PUERTO,
+  GLOSA_TIPO_BULTO,
+  GLOSA_UNIDAD,
+  GLOSA_VIA,
+} from '../dte-core/exportacion/tablas/index.js';
 import { extraerDatosImpresion, type DatosImpresion, type TipoImpresion, type TrasladoImpresion } from './datos-impresion.js';
 import { dimensionesPng, generarPdf417, PX_POR_MODULO, XDIM_PT } from './timbre-pdf417.js';
 
@@ -10,7 +20,7 @@ export interface OpcionesPdf {
   unidadSii?: string;
   /** Resolución que autoriza al contribuyente (leyenda `Res. N de AAAA`). */
   resolucion: { numero: number; fecha: string };
-  /** Agrega acuse de recibo y leyenda CEDIBLE (solo 33, 34 y 52; ver `admiteCedible`). */
+  /** Agrega acuse de recibo y leyenda CEDIBLE (solo 33, 34 y 52; ver `admiteCedible`; nunca en exportación ni notas). */
   cedible?: boolean;
   /** Logo (PNG/JPEG), esquina superior izquierda. */
   logo?: Buffer;
@@ -43,6 +53,16 @@ export function admiteCedible(tipo: TipoImpresion, indTraslado?: number): boolea
 export function formatearMonto(n: number): string {
   const r = Math.round(n);
   return (r < 0 ? '-' : '') + String(Math.abs(r)).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+}
+
+/**
+ * Monto en moneda extranjera: separador de miles con punto y decimales con coma, mínimo 2 y máximo `maxDec`
+ * (los ceros sobrantes se recortan). El peso chileno sigue usando `formatearMonto` (sin decimales).
+ */
+export function formatearMontoMoneda(n: number, maxDec = 4): string {
+  const [ent = '0', dec = ''] = Math.abs(n).toFixed(maxDec).split('.');
+  const frac = dec.replace(/0+$/, '').padEnd(2, '0');
+  return `${n < 0 ? '-' : ''}${ent.replace(/\B(?=(\d{3})+(?!\d))/g, '.')},${frac}`;
 }
 
 function formatearCantidad(n: number): string {
@@ -95,6 +115,60 @@ export function filasTraslado(d: DatosImpresion): [string, string][] {
   ];
   return filas.filter((f): f is [string, string] => f[1] !== undefined && f[1] !== '');
 }
+function conGlosa(codigo: number | undefined, tabla: ReadonlyMap<number, string>): string | undefined {
+  if (codigo === undefined) return undefined;
+  const g = tabla.get(codigo);
+  return g ? `${g} (${codigo})` : String(codigo);
+}
+
+/**
+ * Filas "etiqueta / valor" de la sección "Datos de la exportación" (110-112): los códigos de Aduana se imprimen
+ * traducidos a su glosa (campos "P" del formato: país, puerto, vía, moneda).
+ */
+export function filasExportacion(d: DatosImpresion): [string, string][] {
+  const e = d.exportacion;
+  if (!e) return [];
+  const a = e.aduana;
+  const unidad = (c: number | undefined) => (c === undefined ? '' : ` ${GLOSA_UNIDAD.get(c) ?? `(cód. ${c})`}`);
+  const bultos = a.bultos
+    .map((b) => `${b.cantidad ?? ''} ${b.codigoTipo !== undefined ? (GLOSA_TIPO_BULTO.get(b.codigoTipo) ?? `cód. ${b.codigoTipo}`) : ''}${b.marcas ? ` [${b.marcas}]` : ''}${b.idContenedor ? ` cont. ${b.idContenedor}` : ''}${b.sello ? ` sello ${b.sello}` : ''}`.trim())
+    .join('; ');
+  const servicios: Record<number, string> = {
+    3: 'Servicios calificados por Aduana',
+    4: 'Servicios de hotelería',
+    5: 'Servicio de transporte terrestre internacional',
+    6: 'Servicios prestados y utilizados en el extranjero',
+  };
+  const filas: [string, string | undefined][] = [
+    ['Moneda:', e.moneda],
+    ['Tipo de cambio:', e.pesos?.tipoCambio !== undefined ? `${formatearMontoMoneda(e.pesos.tipoCambio)} pesos por unidad` : undefined],
+    ['Tipo de operación:', e.indServicio !== undefined ? servicios[e.indServicio] : undefined],
+    ['Forma de pago:', conGlosa(e.formaPagoExportacion, GLOSA_FORMA_PAGO)],
+    ['Fecha cancelación:', e.fechaCancelacion ? fechaCorta(e.fechaCancelacion) : undefined],
+    ['Modalidad de venta:', conGlosa(a.codigoModalidadVenta, GLOSA_MODALIDAD)],
+    ['Cláusula de venta:', conGlosa(a.codigoClausulaVenta, GLOSA_CLAUSULA)],
+    ['Total cláusula:', a.totalClausulaVenta !== undefined ? `${formatearMontoMoneda(a.totalClausulaVenta)} ${e.moneda}` : undefined],
+    ['Vía de transporte:', conGlosa(a.codigoViaTransporte, GLOSA_VIA)],
+    ['Medio de transporte:', a.nombreTransporte],
+    ['Cía. transportista:', [a.nombreCompaniaTransporte, a.rutCompaniaTransporte].filter(Boolean).join(' - ') || undefined],
+    ['Booking:', a.booking],
+    ['Operador:', a.operador],
+    ['Puerto de embarque:', conGlosa(a.codigoPuertoEmbarque, GLOSA_PUERTO)],
+    ['Puerto de desembarque:', conGlosa(a.codigoPuertoDesembarque, GLOSA_PUERTO)],
+    ['País receptor:', conGlosa(a.codigoPaisReceptor ?? e.extranjero.nacionalidad, GLOSA_PAIS)],
+    ['País de destino:', conGlosa(a.codigoPaisDestino, GLOSA_PAIS)],
+    ['Id. receptor extranjero:', e.extranjero.numId],
+    ['Total bultos:', a.totalBultos !== undefined ? String(a.totalBultos) : undefined],
+    ['Tipo de bultos:', bultos || undefined],
+    ['Tara:', a.tara !== undefined ? `${formatearMontoMoneda(a.tara, 0)}${unidad(a.codigoUnidadTara)}` : undefined],
+    ['Peso bruto:', a.pesoBruto !== undefined ? `${formatearMontoMoneda(a.pesoBruto, 2)}${unidad(a.codigoUnidadPesoBruto)}` : undefined],
+    ['Peso neto:', a.pesoNeto !== undefined ? `${formatearMontoMoneda(a.pesoNeto, 2)}${unidad(a.codigoUnidadPesoNeto)}` : undefined],
+    ['Flete:', a.montoFlete !== undefined ? `${formatearMontoMoneda(a.montoFlete)} ${e.moneda}` : undefined],
+    ['Seguro:', a.montoSeguro !== undefined ? `${formatearMontoMoneda(a.montoSeguro)} ${e.moneda}` : undefined],
+  ];
+  return filas.filter((f): f is [string, string] => f[1] !== undefined && f[1] !== '');
+}
+
 const CODIGOS_REF: Record<number, string> = { 1: 'Anula documento', 2: 'Corrige texto', 3: 'Corrige montos' };
 
 function lineaComuna(p: { comuna?: string; ciudad?: string }): string {
@@ -164,7 +238,31 @@ function leyendaCedible(tipo: TipoImpresion): string {
   return tipo === 52 ? 'CEDIBLE CON SU FACTURA' : 'CEDIBLE';
 }
 
-function lineasTotales(d: DatosImpresion): { etiqueta: string; valor: number; fuerte?: boolean }[] {
+interface FilaTotal {
+  etiqueta: string;
+  /** Valor ya formateado. */
+  texto: string;
+  fuerte?: boolean;
+}
+
+function lineasTotalesExportacion(d: DatosImpresion): FilaTotal[] {
+  const e = d.exportacion as NonNullable<DatosImpresion['exportacion']>;
+  const filas: FilaTotal[] = [];
+  for (const dr of d.descuentosRecargos) {
+    const detalle = dr.tipoValor === '%' ? ` ${dr.valor}%` : '';
+    filas.push({ etiqueta: `${dr.tipo === 'D' ? 'Descuento' : 'Recargo'}${detalle}`, texto: formatearMontoMoneda(dr.tipo === 'D' ? -dr.monto : dr.monto) });
+  }
+  filas.push({ etiqueta: 'Monto Exento', texto: formatearMontoMoneda(e.montoExento) });
+  filas.push({ etiqueta: `Total ${e.moneda}`, texto: formatearMontoMoneda(e.montoTotal), fuerte: true });
+  if (e.pesos) {
+    if (e.pesos.tipoCambio !== undefined) filas.push({ etiqueta: 'Tipo de cambio', texto: formatearMontoMoneda(e.pesos.tipoCambio) });
+    filas.push({ etiqueta: `Equiv. ${e.pesos.moneda}`, texto: `$ ${formatearMonto(e.pesos.montoTotal)}`, fuerte: true });
+  }
+  return filas;
+}
+
+function lineasTotales(d: DatosImpresion): FilaTotal[] {
+  if (d.exportacion) return lineasTotalesExportacion(d);
   const t = d.totales;
   const filas: { etiqueta: string; valor: number; fuerte?: boolean }[] = [];
   for (const dr of d.descuentosRecargos) {
@@ -177,7 +275,7 @@ function lineasTotales(d: DatosImpresion): { etiqueta: string; valor: number; fu
   if (t.iva !== undefined && t.neto !== undefined && t.neto > 0) filas.push({ etiqueta: `IVA (${t.tasaIva ?? 19}%)`, valor: t.iva });
   for (const i of t.impuestosAdicionales) filas.push({ etiqueta: `Imp. adicional cód. ${i.codigo}${i.tasa ? ` (${i.tasa}%)` : ''}`, valor: i.monto });
   filas.push({ etiqueta: 'Monto Total', valor: t.total, fuerte: true });
-  return filas;
+  return filas.map((f) => ({ etiqueta: f.etiqueta, texto: `$ ${formatearMonto(f.valor)}`, fuerte: f.fuerte }));
 }
 
 // ---------- Carta ----------
@@ -236,16 +334,20 @@ function renderCarta(doc: Doc, d: DatosImpresion, o: OpcionesPdf, timbre: Timbre
   let y = Math.max(yIzq, yDer) + 12;
 
   // --- receptor ---
+  const exp = d.exportacion;
   const filasRec: [string, string][] = [
     ['Señor(es):', d.receptor.razonSocial],
     ['R.U.T.:', d.receptor.rut],
     ['Giro:', d.receptor.giro ?? ''],
     ['Dirección:', d.receptor.direccion ?? ''],
-    ['Comuna:', lineaComuna(d.receptor)],
+    exp
+      ? ['País:', conGlosa(exp.aduana.codigoPaisReceptor ?? exp.extranjero.nacionalidad, GLOSA_PAIS) ?? '']
+      : ['Comuna:', lineaComuna(d.receptor)],
   ];
   const filasDer: [string, string][] = [['Fecha Emisión:', fechaLarga(d.fechaEmision)]];
   if (d.fechaVencimiento) filasDer.push(['Vencimiento:', fechaLarga(d.fechaVencimiento)]);
   if (d.formaPago !== undefined && FORMAS_PAGO[d.formaPago]) filasDer.push(['Forma de pago:', FORMAS_PAGO[d.formaPago]!]);
+  if (exp) filasDer.push(['Moneda:', exp.moneda]);
   if (d.tipo === 52 && d.indTraslado !== undefined && TRASLADOS[d.indTraslado]) filasDer.push(['Tipo traslado:', TRASLADOS[d.indTraslado]!]);
 
   const wColIzq = 300;
@@ -275,19 +377,20 @@ function renderCarta(doc: Doc, d: DatosImpresion, o: OpcionesPdf, timbre: Timbre
   y += hRec + 10;
 
   // --- datos del traslado (Res. Ex. SII 144/2026) ---
-  const filasTr = filasTraslado(d);
+  const filasTr = exp ? filasExportacion(d) : filasTraslado(d);
   if (filasTr.length > 0) {
     const mitad = Math.ceil(filasTr.length / 2);
     const colA = filasTr.slice(0, mitad);
     const colB = filasTr.slice(mitad);
     const wCol = (ancho - 12) / 2;
-    const hTr = Math.max(medir(colA, wCol, 92), medir(colB, wCol, 92)) + 22;
+    const wLabTr = exp ? 112 : 92;
+    const hTr = Math.max(medir(colA, wCol, wLabTr), medir(colB, wCol, wLabTr)) + 22;
     doc.lineWidth(0.6).strokeColor(GRIS).rect(M, y, ancho, hTr).stroke();
-    doc.fillColor('black').font('Helvetica-Bold').fontSize(9).text('Datos del traslado', M + 6, y + 4, { width: ancho - 12, lineBreak: false });
+    doc.fillColor('black').font('Helvetica-Bold').fontSize(9).text(exp ? 'Datos de la exportación' : 'Datos del traslado', M + 6, y + 4, { width: ancho - 12, lineBreak: false });
     const y0 = y;
     y += 14;
-    pintar(colA, M + 6, wCol, 92);
-    pintar(colB, M + 6 + wCol, wCol, 92);
+    pintar(colA, M + 6, wCol, wLabTr);
+    pintar(colB, M + 6 + wCol, wCol, wLabTr);
     y = y0 + hTr + 10;
   }
 
@@ -299,7 +402,7 @@ function renderCarta(doc: Doc, d: DatosImpresion, o: OpcionesPdf, timbre: Timbre
     { t: 'Cantidad', w: 44, a: 'right' as const },
     { t: 'Unid.', w: 34, a: 'center' as const },
     { t: 'P. Unit.', w: 56, a: 'right' as const },
-    { t: '$ Dscto.', w: 50, a: 'right' as const },
+    { t: 'Dscto.', w: 50, a: 'right' as const },
     { t: 'Valor', w: 60, a: 'right' as const },
   ];
   const pie = (): number => bajo - 4;
@@ -323,16 +426,27 @@ function renderCarta(doc: Doc, d: DatosImpresion, o: OpcionesPdf, timbre: Timbre
       doc.page.margins.bottom = 0;
       y = encabezadoTabla(M);
     }
-    const valores = [
-      String(l.numero),
-      l.codigo ?? '',
-      desc,
-      formatearCantidad(l.cantidad),
-      l.unidad ?? '',
-      formatearPrecio(l.precioUnitario),
-      l.descuentoMonto ? formatearMonto(l.descuentoMonto) : '',
-      formatearMonto(l.monto) + (l.exento && d.tipo !== 34 && d.tipo !== 41 ? ' E' : ''),
-    ];
+    const valores = exp
+      ? [
+          String(l.numero),
+          l.codigo ?? '',
+          desc,
+          formatearMontoMoneda(l.cantidad, 6),
+          l.unidad ?? '',
+          formatearMontoMoneda(l.precioUnitario, 6),
+          l.descuentoMonto ? formatearMontoMoneda(l.descuentoMonto) : '',
+          formatearMontoMoneda(l.monto),
+        ]
+      : [
+          String(l.numero),
+          l.codigo ?? '',
+          desc,
+          formatearCantidad(l.cantidad),
+          l.unidad ?? '',
+          formatearPrecio(l.precioUnitario),
+          l.descuentoMonto ? formatearMonto(l.descuentoMonto) : '',
+          formatearMonto(l.monto) + (l.exento && d.tipo !== 34 && d.tipo !== 41 ? ' E' : ''),
+        ];
     let x = M;
     doc.fillColor('black');
     cols.forEach((c, i) => {
@@ -343,7 +457,7 @@ function renderCarta(doc: Doc, d: DatosImpresion, o: OpcionesPdf, timbre: Timbre
   }
   doc.lineWidth(0.5).strokeColor(GRIS).moveTo(M, y).lineTo(M + ancho, y).stroke();
   y += 8;
-  if (d.detalle.some((l) => l.exento) && d.tipo !== 34 && d.tipo !== 41) {
+  if (!exp && d.detalle.some((l) => l.exento) && d.tipo !== 34 && d.tipo !== 41) {
     doc.font('Helvetica').fontSize(7).fillColor('black').text('E = ítem exento o no afecto a IVA', M, y, { width: ancho });
     y = doc.y + 6;
   }
@@ -391,9 +505,14 @@ function renderCarta(doc: Doc, d: DatosImpresion, o: OpcionesPdf, timbre: Timbre
   const filas = lineasTotales(d);
   const hTot = filas.length * 15 + 8;
   if (y + hTot > yZonaInferior) {
-    doc.addPage();
-    doc.page.margins.bottom = 0;
-    y = M;
+    if (!cedible && hTot < zonaInferior - 12) {
+      // Sin acuse de recibo la zona inferior derecha está libre: los totales caben junto al timbre.
+      y = yZonaInferior + 6;
+    } else {
+      doc.addPage();
+      doc.page.margins.bottom = 0;
+      y = M;
+    }
   }
   const xTot = M + ancho - 210;
   doc.lineWidth(0.6).strokeColor(GRIS).rect(xTot, y, 210, hTot).stroke();
@@ -401,7 +520,7 @@ function renderCarta(doc: Doc, d: DatosImpresion, o: OpcionesPdf, timbre: Timbre
   for (const f of filas) {
     doc.fillColor('black').font(f.fuerte ? 'Helvetica-Bold' : 'Helvetica').fontSize(f.fuerte ? 10 : 9);
     doc.text(f.etiqueta, xTot + 8, yt, { width: 110, lineBreak: false });
-    doc.text(`$ ${formatearMonto(f.valor)}`, xTot + 110, yt, { width: 92, align: 'right', lineBreak: false });
+    doc.text(f.texto, xTot + 110, yt, { width: 92, align: 'right', lineBreak: false });
     yt += 15;
   }
 
@@ -515,7 +634,7 @@ function renderTermica(doc: Doc, d: DatosImpresion, o: OpcionesPdf, timbre: Timb
   for (const f of lineasTotales(d)) {
     doc.fillColor('black').font(f.fuerte ? 'Helvetica-Bold' : 'Helvetica').fontSize(f.fuerte ? 10 : 8.5);
     doc.text(f.etiqueta, x, y, { width: 100, lineBreak: false });
-    doc.text(`$ ${formatearMonto(f.valor)}`, x + 90, y, { width: w - 90, align: 'right', lineBreak: false });
+    doc.text(f.texto, x + 90, y, { width: w - 90, align: 'right', lineBreak: false });
     y += f.fuerte ? 14 : 12;
   }
   y += 6;
@@ -537,7 +656,8 @@ function renderTermica(doc: Doc, d: DatosImpresion, o: OpcionesPdf, timbre: Timb
  */
 export async function generarPdf(xmlDte: string | Buffer, opciones: OpcionesPdf): Promise<Buffer> {
   const d = extraerDatosImpresion(xmlDte);
-  const formato = opciones.formato ?? (d.tipo === 39 || d.tipo === 41 ? 'termica80' : 'carta');
+  // Los documentos de exportación solo tienen formato carta (zona de datos de Aduana y de moneda).
+  const formato = d.exportacion ? 'carta' : (opciones.formato ?? (d.tipo === 39 || d.tipo === 41 ? 'termica80' : 'carta'));
   const timbre = tamanoTimbre(await generarPdf417(d.tedXml));
   const titulo = `${d.nombreDocumento} N° ${d.folio}`;
 

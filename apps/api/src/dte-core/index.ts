@@ -16,3 +16,7 @@ export * from './envio/envio.js';
 export * from './libros/comun.js';
 export * from './libros/libro-cv.js';
 export * from './libros/libro-guias.js';
+export * from './exportacion/tipos.js';
+export * from './exportacion/totales.js';
+export * from './exportacion/construir.js';
+export * from './exportacion/tablas/index.js';

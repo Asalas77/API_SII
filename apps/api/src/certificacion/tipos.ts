@@ -1,6 +1,7 @@
 /** Modelo del set de pruebas del SII, independiente del formato de origen (texto del SII o JSON). */
+import type { ExportacionDte } from '../dte-core/index.js';
 
-export type TipoCaso = 33 | 34 | 39 | 41 | 52 | 56 | 61;
+export type TipoCaso = 33 | 34 | 39 | 41 | 52 | 56 | 61 | 110 | 111 | 112;
 
 export interface ItemCaso {
   /** Glosa exacta del caso (el SII exige copiarla tal cual, con acentos y ñ). */
@@ -37,6 +38,15 @@ export interface CasoSet {
   /** Descuento global en % (sobre los ítems afectos). */
   descuentoGlobalPorcentaje?: number;
   referencias: ReferenciaCaso[];
+  /**
+   * Set de exportación (110, 111, 112): moneda, tipo de cambio, receptor extranjero y datos de Aduana. Los precios de
+   * `items` están en esa moneda. Solo en formato JSON (el formato de texto del set de exportación no está publicado).
+   */
+  exportacion?: ExportacionDte;
+  /** Exportación: receptor extranjero del caso (el RUT es siempre 55555555-5). */
+  receptorExtranjero?: { razonSocial: string; direccion: string; giro?: string };
+  /** Exportación: 3 a 6 si el caso es una exportación de servicios (omitir para bienes). */
+  indServicio?: 3 | 4 | 5 | 6;
   /** Guías de despacho: indicador de traslado 1..9. */
   indTraslado?: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
   /** Texto libre del set que no se pudo interpretar (se muestra como advertencia). */

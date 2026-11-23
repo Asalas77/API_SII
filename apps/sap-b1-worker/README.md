@@ -37,7 +37,7 @@ Campos creados (prefijo `U_`; se crean en `OINV`, `ORIN` y `ODLN` salvo que se i
 
 | UDF | Tipo | Quién lo escribe | Uso |
 |---|---|---|---|
-| `U_SII_TipoDTE` | Alfa 3, valores 33/34/39/41/52/56/61 | Usuario / worker | Tipo a emitir. Si está vacío se deriva (ver mapeo). El worker lo deja escrito al emitir |
+| `U_SII_TipoDTE` | Alfa 3, valores 33/34/39/41/52/56/61/110/111/112 | Usuario / worker | Tipo a emitir. Si está vacío se deriva (ver mapeo). El worker lo deja escrito al emitir |
 | `U_SII_Estado` | Alfa 20, valores válidos (ver Estados) | Usuario (`PENDIENTE`) / worker | Estado de la integración |
 | `U_SII_Folio` | Número | Worker | Folio asignado por la API |
 | `U_SII_TrackId` | Alfa 20 | Worker | Track ID del envío al SII |
@@ -58,6 +58,14 @@ Campos creados (prefijo `U_`; se crean en `OINV`, `ORIN` y `ODLN` salvo que se i
 | `U_SII_RazonRef` | Alfa 90 | Usuario | `OINV`/`ORIN`: razón de la referencia |
 | `U_SII_TipoDocRef`, `U_SII_FolioRef` | Alfa 3 / 18 | Usuario | `OINV`/`ORIN`: referencia manual cuando la nota no se creó copiando de un documento base |
 | `U_SII_Giro` | Alfa 40 | Usuario | En `OCRD` (socio de negocios): giro del receptor |
+| `U_SII_ModVenta`, `U_SII_ClausulaVenta` | Alfa 2 | Usuario | `OINV`/`ORIN`, solo exportación: códigos de modalidad de venta (51-26) y cláusula de compraventa (51-21) de Aduana |
+| `U_SII_TotClausula` | Alfa 20 | Usuario | Exportación: total de la cláusula de venta en la moneda del documento (por defecto `DocTotalFC`; acepta coma decimal) |
+| `U_SII_ViaTransp` | Alfa 2 | Usuario | Exportación: vía de transporte (51-13) |
+| `U_SII_PtoEmbarque`, `U_SII_PtoDesemb` | Alfa 4 | Usuario | Exportación: puertos de embarque y desembarque (51-11) |
+| `U_SII_PaisReceptor`, `U_SII_PaisDestino` | Alfa 3 | Usuario | Exportación: país del receptor (también su nacionalidad) y país de destino (51-9) |
+| `U_SII_TotBultos`, `U_SII_TipoBulto` | Numérico 11 / Alfa 3 | Usuario | Exportación: total de bultos y tipo de bulto (51-23) |
+| `U_SII_FormaPagoExp` | Alfa 2 | Usuario | Exportación: forma de pago de exportación (51-22) |
+| `U_SII_IndServicio` | Alfa 1 | Usuario | Exportación de servicios: 3 a 6; vacío para bienes |
 
 Para emitir, el usuario (o una regla/UDO/query de B1) pone `U_SII_Estado = 'PENDIENTE'` en un documento ya agregado.
 
@@ -155,3 +163,19 @@ No mapeado todavía: impuestos adicionales/específicos, retenciones, boletas po
 - **Documentos que quedan `ENVIANDO`**: mire el log (`emision fallida…`): API caída, clave inválida (401/403) o sesión. Se reintentan solos; la conciliación los retoma al reiniciar.
 - **Campo `U_SII_*` rechazado en PATCH**: ejecute `instalar-udfs`; el valor de `U_SII_Estado` debe estar entre los valores válidos.
 - **`E2E` opcional**: `API_SII_E2E=1 API_URL=... API_KEY=... EMPRESA_RUT=... npm run test:e2e` emite una factura de prueba contra la API real (consume un folio) con Service Layer simulado.
+
+## Exportación (110, 111, 112)
+
+Se activa **explícitamente** con `U_SII_TipoDTE`: 110 (factura de exportación) y 111 (nota de débito de exportación) en una factura de deudores (`Invoices`), 112 (nota de crédito de exportación) en una nota de crédito de deudores (`CreditNotes`). No se deduce del socio ni de la moneda. Mapeo (`mapeador.ts`, pruebas en `test/mapeador.spec.ts`):
+
+| Dato de la API | Origen en B1 |
+|---|---|
+| `exportacion.moneda` | `DocCurrency` -> glosa de moneda del SII (`TipMonType` del XSD): `USD` DOLAR USA, `EUR` EURO, `CAD`, `AUD`, `NZD`, `HKD`, `SGD`, `GBP`, `JPY`, `ZAR`, `MXN`, `COP`, `UYU`, `BOB`, `PYG`, `PEN`, `CNY` (ver `MONEDAS_SII`); las demás se declaran en `B1_MONEDAS_SII` (`BRL=OTRAS MONEDAS,...`). La moneda local (`B1_MONEDA_LOCAL`, por defecto `CLP`) se rechaza |
+| `exportacion.tipoCambio` | `DocRate` (pesos por unidad de la moneda del documento) |
+| precios del detalle | `UnitPrice` de cada línea, en la moneda del documento (si la línea trae `Currency` distinta de `DocCurrency` se rechaza); `DiscountPercent` de línea y de cabecera (descuento global %, sin `exento`) |
+| receptor | RUT **omitido** (la API usa 55555555-5); `CardName`; dirección de facturación del socio (obligatoria en la 110); `LicTradNum` = identificador tributario en su país -> `exportacion.extranjero.numId`; `exportacion.extranjero.nacionalidad` = `U_SII_PaisReceptor` |
+| `exportacion.aduana` | UDF `U_SII_*` de la tabla anterior. La factura 110 exige `U_SII_PaisReceptor`; para bienes además modalidad, cláusula, vía, ambos puertos, país de destino y total de bultos; con `U_SII_IndServicio` 3, 4 o 5 no se exigen modalidad ni cláusula, y con 4 tampoco la vía (reglas del formato DTE v2.5). En 111/112 todo es opcional salvo `U_SII_PaisReceptor`. Los códigos se validan contra las tablas de Aduana en la API |
+| `aduana.totalClausulaVenta` | `U_SII_TotClausula` o, si está vacío, `DocTotalFC` |
+| referencias 111/112 | Igual que 56/61: líneas copiadas del documento base (con `U_SII_Folio` y `U_SII_TipoDTE` 110/111/112) o `U_SII_TipoDocRef` + `U_SII_FolioRef` + `U_SII_CodRef` |
+
+Supuestos de B1 (sin un B1 real para verificar): `DocCurrency` guarda el código de moneda, `DocRate` los pesos por unidad, `UnitPrice` está en la moneda del documento y `DocTotalFC` es el total en esa moneda (se contrasta con el calculado y solo genera una advertencia si difieren en más de 0,05: la API emite con precios y cantidades). La API calcula los totales, redondea a 4 decimales y el equivalente en pesos al entero. Nuevas variables: `B1_MONEDA_LOCAL`, `B1_MONEDAS_SII`. Tras actualizar, vuelva a correr `npm run instalar-udfs` (crea solo los campos que faltan).

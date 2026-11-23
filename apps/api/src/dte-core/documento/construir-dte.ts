@@ -4,18 +4,20 @@ import { firmarXml } from '../firma/firma.js';
 import { generarTed } from '../ted/ted.js';
 import {
   aIso88591,
-  escaparXml,
   formatearRut,
   formatearTimestampSii,
-  sanearLatin1,
   separarRut,
   validarDv,
 } from '../xml/xml.util.js';
 import { ErrorValidacionDte } from './errores.js';
+import { NS_SII, NS_XSI, numeroXml, RUT_GENERICO, rutDe, tag, truncar, validarFecha } from './xml-helpers.js';
+import { construirDteExportacion } from '../exportacion/construir.js';
+import type { TotalesExportacion } from '../exportacion/tipos.js';
 import { calcularTotales } from './totales.js';
 import { literalMarcador, normalizarTraslado, TIPOS_DOC_TRIBUTARIOS, type TrasladoNormalizado } from './traslado.js';
 import {
   esBoleta,
+  esExportacion,
   esTipoExento,
   MAX_ACTECOS,
   MAX_DESCUENTOS_RECARGOS,
@@ -48,6 +50,8 @@ export interface OpcionesConstruirDte {
   permitirIndTrasladoRes144?: boolean;
   /** Exige el bloque `traslado` en las guías de despacho (52), Res. Ex. SII 144/2026. Por defecto `false`. */
   exigirTrasladoGuias?: boolean;
+  /** Exportación (110-112): valida los códigos contra las tablas de Aduana. Por defecto `true`. */
+  validarTablasAduana?: boolean;
 }
 
 /**
@@ -70,54 +74,11 @@ export interface DteConstruido {
   totales: TotalesDte;
   /** Traslado validado y normalizado (Res. Ex. SII 144/2026); `undefined` si el documento no trae `traslado`. */
   traslado?: TrasladoNormalizado;
+  /** Solo 110/111/112: totales en la moneda de la operación y su equivalente en pesos (`totales` va en pesos). */
+  totalesExportacion?: TotalesExportacion;
 }
 
-export const NS_SII = 'http://www.sii.cl/SiiDte';
-export const NS_XSI = 'http://www.w3.org/2001/XMLSchema-instance';
-const RUT_GENERICO = '66666666-6';
-
-// ---------------------------------------------------------------------------------------------
-// Helpers de serialización
-// ---------------------------------------------------------------------------------------------
-
-/** Trunca por code points y quita espacios en los extremos. */
-function truncar(texto: string, max: number): string {
-  return Array.from(texto.trim()).slice(0, max).join('');
-}
-
-/**
- * Elemento de texto: se sanea a Latin-1 (la firma se calcula sobre lo que se transmite),
- * se trunca a `max` caracteres (si se indica) y se escapa. Omite el elemento si el valor es vacío.
- */
-function tag(nombre: string, valor: string | number | undefined | null, max?: number): string {
-  if (valor === undefined || valor === null) return '';
-  let v = typeof valor === 'number' ? String(valor) : sanearLatin1(valor);
-  if (max !== undefined) v = truncar(v, max);
-  if (v === '') return '';
-  return `<${nombre}>${escaparXml(v)}</${nombre}>`;
-}
-
-/** Decimal sin notación científica ni ceros sobrantes (hasta `decimales`). */
-export function numeroXml(n: number, decimales = 6): string {
-  if (Number.isInteger(n)) return String(n);
-  return n.toFixed(decimales).replace(/\.?0+$/, '');
-}
-
-function rutDe(rut: string | number, dv: string, ctx: string): string {
-  const cuerpo = String(rut).replace(/\D/g, '');
-  if (!cuerpo || !/^[\dkK]$/.test(dv)) throw new ErrorValidacionDte(`${ctx}: RUT inválido (${rut}-${dv})`);
-  if (!validarDv(cuerpo, dv)) throw new ErrorValidacionDte(`${ctx}: dígito verificador incorrecto (${rut}-${dv})`);
-  const r = formatearRut(cuerpo, dv);
-  if (r.length > 10) throw new ErrorValidacionDte(`${ctx}: RUT demasiado largo (${r})`);
-  return r;
-}
-
-function validarFecha(valor: string | undefined, ctx: string): void {
-  if (valor === undefined) return;
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(valor) || Number.isNaN(Date.parse(`${valor}T00:00:00Z`))) {
-    throw new ErrorValidacionDte(`${ctx}: fecha inválida (${valor}), se espera yyyy-mm-dd`);
-  }
-}
+export { NS_SII, NS_XSI, numeroXml } from './xml-helpers.js';
 
 // ---------------------------------------------------------------------------------------------
 // Validación de negocio
@@ -132,7 +93,7 @@ function validarDocumento(
 ): TrasladoNormalizado | undefined {
   const { idDoc, emisor, receptor } = doc;
   const tipo = idDoc.tipoDte;
-  if (!TIPOS_DTE.includes(tipo)) throw new ErrorValidacionDte(`Tipo de documento no soportado: ${String(tipo)}`);
+  if (!TIPOS_DTE.includes(tipo) || esExportacion(tipo)) throw new ErrorValidacionDte(`Tipo de documento no soportado: ${String(tipo)}`);
   if (!Number.isInteger(idDoc.folio) || idDoc.folio <= 0) {
     throw new ErrorValidacionDte(`Folio inválido: ${idDoc.folio}`);
   }
@@ -501,6 +462,14 @@ function xmlReferencias(doc: DocumentoDte): string {
  */
 export function construirDte(doc: DocumentoDte, opciones: OpcionesConstruirDte): DteConstruido {
   const { caf, certificado } = opciones;
+  if (esExportacion(doc.idDoc.tipoDte)) {
+    return construirDteExportacion(doc, {
+      caf,
+      certificado,
+      fechaFirma: opciones.fechaFirma,
+      validarTablasAduana: opciones.validarTablasAduana,
+    });
+  }
   const traslado = validarDocumento(
     doc,
     caf,

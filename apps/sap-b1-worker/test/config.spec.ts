@@ -40,4 +40,12 @@ describe('configuración', () => {
   it('dry-run de UDFs no exige credenciales', () => {
     expect(() => leerConfig({}, { requiereSl: false, requiereApi: false })).not.toThrow();
   });
+
+  it('exportación: moneda local y glosas de moneda del SII', () => {
+    const c = leerConfig({ ...base, B1_MONEDA_LOCAL: 'clp', B1_MONEDAS_SII: 'brl=otras monedas, ARS=PESO' });
+    expect(c.b1.monedaLocal).toBe('CLP');
+    expect(c.b1.monedasSii).toEqual({ BRL: 'OTRAS MONEDAS', ARS: 'PESO' });
+    expect(leerConfig(base).b1.monedasSii).toEqual({});
+    expect(() => leerConfig({ ...base, B1_MONEDAS_SII: 'BRL' })).toThrow(/CODIGO=GLOSA/);
+  });
 });

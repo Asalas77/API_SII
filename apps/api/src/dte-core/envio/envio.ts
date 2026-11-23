@@ -132,12 +132,12 @@ function construirSobre(
 }
 
 /**
- * Arma y firma el sobre `EnvioDTE` (33, 34, 52, 56, 61). Los DTE firmados se insertan textualmente
+ * Arma y firma el sobre `EnvioDTE` (33, 34, 52, 56, 61 y exportación 110, 111, 112). Los DTE firmados se insertan textualmente
  * (solo se quita su declaración XML) para no romper sus firmas. `SubTotDTE` se agrupa por tipo.
  * Hasta 2000 DTE por sobre (XSD).
  */
 export function construirEnvioDte(opciones: OpcionesEnvio): EnvioConstruido {
-  return construirSobre('EnvioDTE', 'EnvioDTE_v10.xsd', opciones, [33, 34, 46, 52, 56, 61], MAX_DTE_POR_SOBRE);
+  return construirSobre('EnvioDTE', 'EnvioDTE_v10.xsd', opciones, [33, 34, 46, 52, 56, 61, 110, 111, 112], MAX_DTE_POR_SOBRE);
 }
 
 /**

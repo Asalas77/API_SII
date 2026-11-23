@@ -39,17 +39,20 @@ namespace SapB1Addon.Core.Modelos
     /// <summary>Tipos de DTE admitidos y su relación con el objeto de B1.</summary>
     public static class TiposDte
     {
-        public static readonly IReadOnlyList<int> Validos = new[] { 33, 34, 39, 41, 52, 56, 61 };
+        public static readonly IReadOnlyList<int> Validos = new[] { 33, 34, 39, 41, 52, 56, 61, 110, 111, 112 };
 
         public static bool EsBoleta(int tipo) => tipo == 39 || tipo == 41;
+
+        /// <summary>Exportación: 110 factura (OINV), 111 nota de débito (OINV), 112 nota de crédito (ORIN).</summary>
+        public static bool EsExportacion(int tipo) => tipo == 110 || tipo == 111 || tipo == 112;
 
         /// <summary>Tipos que admite cada ObjType: 13 factura de deudores, 14 nota de crédito, 15 entrega.</summary>
         public static IReadOnlyList<int> PorObjType(int objType)
         {
             switch (objType)
             {
-                case 13: return new[] { 33, 34, 39, 41, 56 };
-                case 14: return new[] { 61 };
+                case 13: return new[] { 33, 34, 39, 41, 56, 110, 111 };
+                case 14: return new[] { 61, 112 };
                 case 15: return new[] { 52 };
                 default: return new int[0];
             }
@@ -121,5 +124,18 @@ namespace SapB1Addon.Core.Modelos
         public const string TipoDocRef = "U_SII_TipoDocRef";
         public const string FolioRef = "U_SII_FolioRef";
         public const string Giro = "U_SII_Giro";
+        // Exportación (110-112): códigos de las tablas de Aduana (Anexo 51 del Compendio de Normas Aduaneras).
+        public const string ModVenta = "U_SII_ModVenta";
+        public const string ClausulaVenta = "U_SII_ClausulaVenta";
+        public const string TotClausula = "U_SII_TotClausula";
+        public const string ViaTransp = "U_SII_ViaTransp";
+        public const string PtoEmbarque = "U_SII_PtoEmbarque";
+        public const string PtoDesemb = "U_SII_PtoDesemb";
+        public const string PaisReceptor = "U_SII_PaisReceptor";
+        public const string PaisDestino = "U_SII_PaisDestino";
+        public const string TotBultos = "U_SII_TotBultos";
+        public const string TipoBulto = "U_SII_TipoBulto";
+        public const string FormaPagoExp = "U_SII_FormaPagoExp";
+        public const string IndServicio = "U_SII_IndServicio";
     }
 }

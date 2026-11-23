@@ -122,7 +122,7 @@ export class LibrosService {
   // Armado (sin persistir)
   // -------------------------------------------------------------------------------------------
 
-  /** Libro de ventas del período desde la tabla `documentos` (33, 34, 56, 61; boletas como resumen). */
+  /** Libro de ventas del período desde la tabla `documentos` (33, 34, 56, 61 y exportación 110, 111, 112; boletas como resumen). */
   async armarVentas(
     empresa: Empresa,
     dto: GenerarLibroVentasDto,

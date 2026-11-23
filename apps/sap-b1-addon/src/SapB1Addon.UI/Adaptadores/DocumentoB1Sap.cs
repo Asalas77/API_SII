@@ -139,6 +139,10 @@ namespace SapB1Addon.UI.Adaptadores
                 AttachmentEntry = Com.Entero(Valor(form, tabla, "AtcEntry", 0)),
                 Comments = Valor(form, tabla, "Comments", 0),
                 Address2 = Valor(form, tabla, "Address2", 0),
+                // Moneda y tipo de cambio del documento (columnas DocCur/DocRate/DocTotalFC de la cabecera; SUPUESTO: sin verificar contra un B1 real).
+                DocCurrency = Valor(form, tabla, "DocCur", 0),
+                DocRate = Com.Decimal(Valor(form, tabla, "DocRate", 0)),
+                DocTotalFc = Com.Decimal(Valor(form, tabla, "DocTotalFC", 0)),
                 // Dirección de entrega (ShipTo): columnas StreetS/StreetNoS/CityS/CountyS de la cabecera (SUPUESTO: sin verificar contra un B1 real).
                 EntregaCalle = Valor(form, tabla, "StreetS", 0),
                 EntregaNumero = Valor(form, tabla, "StreetNoS", 0),
@@ -169,6 +173,18 @@ namespace SapB1Addon.UI.Adaptadores
                 SiiRazonRef = Valor(form, tabla, Udf.RazonRef, 0),
                 SiiTipoDocRef = Valor(form, tabla, Udf.TipoDocRef, 0),
                 SiiFolioRef = Valor(form, tabla, Udf.FolioRef, 0),
+                SiiModVenta = Valor(form, tabla, Udf.ModVenta, 0),
+                SiiClausulaVenta = Valor(form, tabla, Udf.ClausulaVenta, 0),
+                SiiTotClausula = Valor(form, tabla, Udf.TotClausula, 0),
+                SiiViaTransp = Valor(form, tabla, Udf.ViaTransp, 0),
+                SiiPtoEmbarque = Valor(form, tabla, Udf.PtoEmbarque, 0),
+                SiiPtoDesemb = Valor(form, tabla, Udf.PtoDesemb, 0),
+                SiiPaisReceptor = Valor(form, tabla, Udf.PaisReceptor, 0),
+                SiiPaisDestino = Valor(form, tabla, Udf.PaisDestino, 0),
+                SiiTotBultos = Valor(form, tabla, Udf.TotBultos, 0),
+                SiiTipoBulto = Valor(form, tabla, Udf.TipoBulto, 0),
+                SiiFormaPagoExp = Valor(form, tabla, Udf.FormaPagoExp, 0),
+                SiiIndServicio = Valor(form, tabla, Udf.IndServicio, 0),
             };
             var folio = Com.Decimal(Valor(form, tabla, Udf.Folio, 0));
             c.SiiFolio = folio.HasValue && folio.Value > 0 ? (long?)Convert.ToInt64(folio.Value) : null;
@@ -193,6 +209,7 @@ namespace SapB1Addon.UI.Adaptadores
                     TaxCode = Valor(form, lineasDs, "VatGroup", i),
                     TaxPercentagePerRow = Com.Decimal(Valor(form, lineasDs, "VatPrcnt", i)),
                     MeasureUnit = Valor(form, lineasDs, "unitMsr", i),
+                    Currency = Valor(form, lineasDs, "Currency", i),
                     BaseType = Com.Entero(Valor(form, lineasDs, "BaseType", i)),
                     BaseEntry = Com.Entero(Valor(form, lineasDs, "BaseEntry", i)),
                     BaseLine = Com.Entero(Valor(form, lineasDs, "BaseLine", i)),

@@ -141,3 +141,53 @@ describe('receptoresDePrueba', () => {
     expect(r.every((x) => validarRut(x.rut))).toBe(true);
   });
 });
+
+describe('set de exportación (JSON)', () => {
+  const SET_EXP = JSON.stringify({
+    numeroAtencion: '4400',
+    casos: [
+      {
+        id: '4400-1',
+        tipoDte: 110,
+        receptorExtranjero: { razonSocial: 'ACME IMPORT INC', direccion: '350 Fifth Avenue, New York' },
+        items: [{ nombre: 'Vino Cabernet Sauvignon', cantidad: 100, precioUnitario: 45.5 }],
+        exportacion: {
+          moneda: 'DOLAR USA',
+          tipoCambio: 925.45,
+          extranjero: { nacionalidad: 225 },
+          aduana: { codigoClausulaVenta: 5, codigoViaTransporte: 1, totalBultos: 10, codigoPaisReceptor: 225 },
+        },
+      },
+      {
+        id: '4400-2',
+        tipoDte: 112,
+        referencias: [{ caso: '4400-1', codRef: 1, razonRef: 'ANULA FACTURA DE EXPORTACION' }],
+        receptorExtranjero: { razonSocial: 'ACME IMPORT INC', direccion: '350 Fifth Avenue, New York' },
+        exportacion: { moneda: 'DOLAR USA', tipoCambio: 925.45, extranjero: { nacionalidad: 225 } },
+        items: [],
+      },
+      { id: '4400-3', tipoDte: 110, items: [{ nombre: 'X', cantidad: 1, precioUnitario: 1 }] },
+    ],
+  });
+
+  it('parsea los casos de exportación y arma el cuerpo de emisión sin IVA ni forma de pago', () => {
+    const set = parsearSet(SET_EXP);
+    const ctx = { fechaEmision: '2026-11-23', receptor: { rut: '12345678-5', razonSocial: 'X' }, emitidos: new Map() };
+    const dto = casoADocumento(set.casos[0], ctx);
+    expect(dto.idDoc).toEqual({ tipoDte: 110, fechaEmision: '2026-11-23' });
+    expect(dto.receptor).toEqual({ razonSocial: 'ACME IMPORT INC', direccion: '350 Fifth Avenue, New York' });
+    expect(dto.exportacion?.moneda).toBe('DOLAR USA');
+    expect(dto.referencias?.[0]).toMatchObject({ tipoDocRef: 'SET', razonRef: 'CASO 4400-1' });
+    expect(dto.detalle[0]).toMatchObject({ cantidad: 100, precioUnitario: 45.5 });
+  });
+
+  it('la nota 112 referencia el caso emitido y repite los ítems al anular; un caso 110 sin exportación falla', () => {
+    const set = parsearSet(SET_EXP);
+    const emitidos = new Map([['4400-1', { tipoDte: 110, folio: 3, fechaEmision: '2026-11-23', items: set.casos[0].items }]]);
+    const ctx = { fechaEmision: '2026-11-23', receptor: { rut: '12345678-5', razonSocial: 'X' }, emitidos };
+    const nota = casoADocumento(set.casos[1], ctx);
+    expect(nota.referencias?.[1]).toMatchObject({ tipoDocRef: '110', folioRef: 3, codRef: 1 });
+    expect(nota.detalle).toHaveLength(1);
+    expect(() => casoADocumento(set.casos[2], ctx)).toThrow(/exportacion/);
+  });
+});

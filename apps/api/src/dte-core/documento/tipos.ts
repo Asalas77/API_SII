@@ -1,9 +1,17 @@
+import type { ExportacionDte } from '../exportacion/tipos.js';
 import type { IndTraslado, TrasladoDte } from './traslado.js';
 
 /** Tipos de documento soportados por los constructores. */
-export type TipoDte = 33 | 34 | 39 | 41 | 52 | 56 | 61;
+export type TipoDte = 33 | 34 | 39 | 41 | 52 | 56 | 61 | 110 | 111 | 112;
 
-export const TIPOS_DTE: readonly TipoDte[] = [33, 34, 39, 41, 52, 56, 61];
+export const TIPOS_DTE: readonly TipoDte[] = [33, 34, 39, 41, 52, 56, 61, 110, 111, 112];
+
+/** Documentos de exportación: 110 factura, 111 nota de débito, 112 nota de crédito (elemento `Exportaciones` del XSD). */
+export const TIPOS_EXPORTACION: readonly TipoDte[] = [110, 111, 112];
+
+export function esExportacion(tipo: number): boolean {
+  return tipo === 110 || tipo === 111 || tipo === 112;
+}
 
 /** Boletas (39 afecta, 41 exenta): usan `EnvioBOLETA_v11.xsd`, precios con IVA incluido. */
 export function esBoleta(tipo: TipoDte): boolean {
@@ -42,13 +50,17 @@ export interface IdDocDte {
   indTraslado?: IndTraslado;
   /**
    * Boletas: 1 servicios periódicos, 2 servicios periódicos domiciliarios, 3 ventas y servicios
-   * (por defecto), 4 espectáculos por cuenta de terceros. En facturas el XSD admite 1 a 3.
+   * (por defecto), 4 espectáculos por cuenta de terceros. En facturas el XSD admite 1 a 3. En exportación:
+   * 3 servicios calificados como tales por Aduana, 4 hotelería, 5 transporte terrestre internacional,
+   * 6 servicios prestados y utilizados totalmente en el extranjero.
    */
-  indServicio?: 1 | 2 | 3 | 4;
+  indServicio?: 1 | 2 | 3 | 4 | 5 | 6;
   /** Boletas: 1 efectivo, 2 pago electrónico, 3 transferencia, 4 cheque, 5 otro. */
   medioPago?: 1 | 2 | 3 | 4 | 5;
   /** Facturas/notas/guías: CH, LT, EF, PE, TC, CF, OT. */
   medioPagoDte?: 'CH' | 'LT' | 'EF' | 'PE' | 'TC' | 'CF' | 'OT';
+  /** Solo exportación: 1 despacho por cuenta del comprador, 2 por cuenta del emisor a instalaciones del comprador, 3 a otras instalaciones. */
+  tipoDespacho?: 1 | 2 | 3;
   /** Servicios periódicos (`yyyy-mm-dd`). */
   periodoDesde?: string;
   periodoHasta?: string;
@@ -162,6 +174,8 @@ export interface DocumentoDte {
   impuestosAdicionales?: ImpuestoAdicionalDte[];
   /** Datos del traslado (Res. Ex. SII 144/2026): guías (52) y facturas (33/34) que amparan traslado. */
   traslado?: TrasladoDte;
+  /** Datos de exportación (Aduana, moneda, receptor extranjero): obligatorio en 110, 111 y 112 y solo en ellos. */
+  exportacion?: ExportacionDte;
   /**
    * Proveedor de software. Solo boletas (39/41): se emite `RUTProvSW` en `Encabezado`, entre `Receptor`
    * y `Totales` (posición del XSD). En los demás tipos se ignora (`DTE_v10.xsd` no lo define).

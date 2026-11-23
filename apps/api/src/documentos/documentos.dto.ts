@@ -1,6 +1,14 @@
 import Joi from 'joi';
 import { fechaSchema, rutSchema } from '../comun/joi.js';
-import { CAMPOS_TRASLADO, CATEGORIAS_TRASLADO, TIPOS_DTE, type CampoTraslado, type CategoriaTraslado, type IndTraslado } from '../dte-core/index.js';
+import {
+  CAMPOS_TRASLADO,
+  CATEGORIAS_TRASLADO,
+  TIPOS_DTE,
+  type CampoTraslado,
+  type CategoriaTraslado,
+  type ExportacionDte,
+  type IndTraslado,
+} from '../dte-core/index.js';
 
 /**
  * Datos de traslado (Res. Ex. SII 144/2026) de una guía de despacho (52) o factura (33/34) que ampara traslado.
@@ -34,21 +42,27 @@ export interface TrasladoDto {
 /** Cuerpo de `POST /v1/empresas/{rut}/documentos`: `DocumentoDte` de dte-core sin folio ni emisor. */
 export interface EmitirDocumentoDto {
   idDoc: {
-    tipoDte: 33 | 34 | 39 | 41 | 52 | 56 | 61;
+    tipoDte: 33 | 34 | 39 | 41 | 52 | 56 | 61 | 110 | 111 | 112;
     /** `yyyy-mm-dd`; por defecto hoy en America/Santiago. */
     fechaEmision?: string;
     fechaVencimiento?: string;
     formaPago?: 1 | 2 | 3;
     indTraslado?: IndTraslado;
-    indServicio?: 1 | 2 | 3 | 4;
+    /** Boletas 1 a 4; facturas 1 a 3; exportación 3 a 6 (omitir para bienes). */
+    indServicio?: 1 | 2 | 3 | 4 | 5 | 6;
+    /** Solo exportación: 1 por cuenta del comprador, 2 por cuenta del emisor a instalaciones del comprador, 3 a otras instalaciones. */
+    tipoDespacho?: 1 | 2 | 3;
     medioPago?: 1 | 2 | 3 | 4 | 5;
     medioPagoDte?: 'CH' | 'LT' | 'EF' | 'PE' | 'TC' | 'CF' | 'OT';
     periodoDesde?: string;
     periodoHasta?: string;
   };
-  /** Obligatorio salvo en boletas (por defecto consumidor final 66666666-6). */
+  /**
+   * Obligatorio salvo en boletas (por defecto consumidor final 66666666-6). En exportación (110-112) el RUT es siempre
+   * 55555555-5 (se puede omitir) y el identificador del receptor en su país va en `exportacion.extranjero.numId`.
+   */
   receptor?: {
-    rut: string;
+    rut?: string;
     razonSocial: string;
     giro?: string;
     direccion?: string;
@@ -93,6 +107,11 @@ export interface EmitirDocumentoDto {
   }>;
   impuestosAdicionales?: Array<{ codigo: number; tasa?: number; monto: number }>;
   traslado?: TrasladoDto;
+  /**
+   * Exportación (110, 111, 112): moneda, tipo de cambio, receptor extranjero y datos de Aduana (ver
+   * `dte-core/README.md`, sección Exportación). Obligatorio en esos tipos y prohibido en los demás.
+   */
+  exportacion?: ExportacionDte;
   /** Metadato opcional para correlacionar con el ERP. */
   origen?: Record<string, unknown>;
 }
@@ -121,6 +140,64 @@ export const trasladoSchema = Joi.object<TrasladoDto>({
   motivoSinPrecio: texto(200),
 });
 
+const codigo = (digitos: number) => Joi.number().integer().min(1).max(10 ** digitos - 1);
+
+const bultoSchema = Joi.object({
+  codigoTipo: codigo(3),
+  cantidad: Joi.number().integer().min(1).max(9_999_999_999),
+  marcas: texto(255),
+  idContenedor: texto(25),
+  sello: texto(20),
+  emisorSello: texto(70),
+});
+
+const aduanaSchema = Joi.object({
+  codigoModalidadVenta: codigo(2),
+  codigoClausulaVenta: codigo(2),
+  totalClausulaVenta: Joi.number().positive(),
+  codigoViaTransporte: codigo(2),
+  nombreTransporte: texto(40),
+  rutCompaniaTransporte: rutSchema,
+  nombreCompaniaTransporte: texto(40),
+  idAdicionalTransporte: texto(20),
+  booking: texto(20),
+  operador: texto(20),
+  codigoPuertoEmbarque: codigo(4),
+  idAdicionalPuertoEmbarque: texto(20),
+  codigoPuertoDesembarque: codigo(4),
+  idAdicionalPuertoDesembarque: texto(20),
+  tara: Joi.number().integer().min(1),
+  codigoUnidadTara: codigo(2),
+  pesoBruto: Joi.number().positive(),
+  codigoUnidadPesoBruto: codigo(2),
+  pesoNeto: Joi.number().positive(),
+  codigoUnidadPesoNeto: codigo(2),
+  totalItems: Joi.number().integer().min(1),
+  totalBultos: Joi.number().integer().min(1),
+  bultos: Joi.array().items(bultoSchema).max(10),
+  montoFlete: Joi.number().positive(),
+  montoSeguro: Joi.number().positive(),
+  codigoPaisReceptor: codigo(3),
+  codigoPaisDestino: codigo(3),
+});
+
+/** Bloque `exportacion` (110-112); las reglas de negocio y de tablas de Aduana las valida dte-core. */
+export const exportacionSchema = Joi.object<ExportacionDte>({
+  moneda: texto(15).required(),
+  tipoCambio: Joi.number().positive().required(),
+  formaPagoExportacion: codigo(2),
+  fechaCancelacion: fechaSchema,
+  extranjero: Joi.object({
+    numId: texto(20),
+    nacionalidad: Joi.alternatives()
+      .try(Joi.number().integer().min(1).max(999), Joi.string().trim().pattern(/^\d{1,3}$/))
+      .required(),
+    idAdicional: texto(20),
+  }).required(),
+  aduana: aduanaSchema,
+  idAdicionalEmisor: texto(20),
+});
+
 export const emitirDocumentoSchema = Joi.object<EmitirDocumentoDto>({
   idDoc: Joi.object({
     tipoDte: Joi.number()
@@ -130,14 +207,15 @@ export const emitirDocumentoSchema = Joi.object<EmitirDocumentoDto>({
     fechaVencimiento: fechaSchema,
     formaPago: Joi.number().valid(1, 2, 3),
     indTraslado: Joi.number().integer().min(1).max(12),
-    indServicio: Joi.number().valid(1, 2, 3, 4),
+    indServicio: Joi.number().valid(1, 2, 3, 4, 5, 6),
+    tipoDespacho: Joi.number().valid(1, 2, 3),
     medioPago: Joi.number().valid(1, 2, 3, 4, 5),
     medioPagoDte: Joi.string().valid('CH', 'LT', 'EF', 'PE', 'TC', 'CF', 'OT'),
     periodoDesde: fechaSchema,
     periodoHasta: fechaSchema,
   }).required(),
   receptor: Joi.object({
-    rut: rutSchema.required(),
+    rut: rutSchema,
     razonSocial: texto(100).required(),
     giro: texto(40),
     direccion: texto(70),
@@ -200,6 +278,7 @@ export const emitirDocumentoSchema = Joi.object<EmitirDocumentoDto>({
     }),
   ),
   traslado: trasladoSchema,
+  exportacion: exportacionSchema,
   origen: Joi.object().unknown(true),
 });
 

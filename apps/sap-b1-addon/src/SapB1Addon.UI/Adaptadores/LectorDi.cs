@@ -37,6 +37,9 @@ namespace SapB1Addon.UI.Adaptadores
                     AttachmentEntry = doc.AttachmentEntry,
                     Comments = doc.Comments,
                     Address2 = doc.Address2,
+                    DocCurrency = doc.DocCurrency,
+                    DocRate = Com.Decimal(doc.DocRate),
+                    DocTotalFc = Com.Decimal(doc.DocTotalFc),
                 };
                 LeerEntrega(doc, c);
                 LeerUdf(doc, c);
@@ -60,6 +63,7 @@ namespace SapB1Addon.UI.Adaptadores
                             TaxCode = lineas.TaxCode,
                             TaxPercentagePerRow = Com.Decimal(lineas.TaxPercentagePerRow),
                             MeasureUnit = lineas.MeasureUnit,
+                            Currency = lineas.Currency,
                             BaseType = lineas.BaseType,
                             BaseEntry = lineas.BaseEntry,
                             BaseLine = lineas.BaseLine,
@@ -110,6 +114,18 @@ namespace SapB1Addon.UI.Adaptadores
                 c.SiiRazonRef = TextoUdf(campos, Core.Modelos.Udf.RazonRef);
                 c.SiiTipoDocRef = TextoUdf(campos, Core.Modelos.Udf.TipoDocRef);
                 c.SiiFolioRef = TextoUdf(campos, Core.Modelos.Udf.FolioRef);
+                c.SiiModVenta = TextoUdf(campos, Core.Modelos.Udf.ModVenta);
+                c.SiiClausulaVenta = TextoUdf(campos, Core.Modelos.Udf.ClausulaVenta);
+                c.SiiTotClausula = TextoUdf(campos, Core.Modelos.Udf.TotClausula);
+                c.SiiViaTransp = TextoUdf(campos, Core.Modelos.Udf.ViaTransp);
+                c.SiiPtoEmbarque = TextoUdf(campos, Core.Modelos.Udf.PtoEmbarque);
+                c.SiiPtoDesemb = TextoUdf(campos, Core.Modelos.Udf.PtoDesemb);
+                c.SiiPaisReceptor = TextoUdf(campos, Core.Modelos.Udf.PaisReceptor);
+                c.SiiPaisDestino = TextoUdf(campos, Core.Modelos.Udf.PaisDestino);
+                c.SiiTotBultos = TextoUdf(campos, Core.Modelos.Udf.TotBultos);
+                c.SiiTipoBulto = TextoUdf(campos, Core.Modelos.Udf.TipoBulto);
+                c.SiiFormaPagoExp = TextoUdf(campos, Core.Modelos.Udf.FormaPagoExp);
+                c.SiiIndServicio = TextoUdf(campos, Core.Modelos.Udf.IndServicio);
             }
             finally
             {

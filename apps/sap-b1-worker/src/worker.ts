@@ -257,7 +257,7 @@ export class Worker {
 
     const socio = await this.leerSocio(doc.CardCode);
     const bases = new Map<string, BaseInfo>();
-    if (ent.objType === 14 || doc.U_SII_TipoDTE?.trim() === '56') {
+    if (ent.objType === 14 || ['56', '111', '112'].includes(doc.U_SII_TipoDTE?.trim() ?? '')) {
       for (const b of basesDe(doc)) {
         const entBase = entidadPorObjType(b.objType);
         if (!entBase) continue;

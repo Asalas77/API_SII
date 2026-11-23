@@ -34,6 +34,10 @@ export interface Config {
     gruposPagoContado: number[];
     /** Campo (UDF) del socio de negocios con el giro. */
     campoGiro: string;
+    /** Código de la moneda local de B1 (por defecto `CLP`): una exportación debe estar en otra moneda. */
+    monedaLocal?: string;
+    /** Código de moneda de B1 -> glosa de moneda del SII (adicional a la tabla incorporada). */
+    monedasSii?: Record<string, string>;
   };
 }
 
@@ -128,6 +132,14 @@ export function leerConfig(
     errores.push('B1_CAMPO_GIRO no es un nombre de campo válido');
   }
 
+  // B1_MONEDAS_SII="USD=DOLAR USA,BRL=OTRAS MONEDAS": código de moneda de B1 = glosa del XSD del SII.
+  const monedasSii: Record<string, string> = {};
+  for (const par of lista(env['B1_MONEDAS_SII'], '')) {
+    const [cod, glosa] = par.split('=').map((x) => x.trim());
+    if (!cod || !glosa) errores.push(`B1_MONEDAS_SII: "${par}" debe tener la forma CODIGO=GLOSA`);
+    else monedasSii[cod.toUpperCase()] = glosa.toUpperCase();
+  }
+
   const config: Config = {
     sl: {
       url: url('SL_URL', undefined, requiereSl),
@@ -155,6 +167,8 @@ export function leerConfig(
       codigosExentos: lista(env['B1_CODIGOS_EXENTOS'], 'IVA_EXE,EXE'),
       gruposPagoContado: gruposPago,
       campoGiro,
+      monedaLocal: (env['B1_MONEDA_LOCAL']?.trim() || 'CLP').toUpperCase(),
+      monedasSii,
     },
   };
   if (errores.length > 0) {

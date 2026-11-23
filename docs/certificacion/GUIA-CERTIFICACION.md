@@ -5,7 +5,7 @@ Todo se ejecuta desde `apps/api/` con Postgres arriba y las migraciones aplicada
 ## 1. Prerrequisitos en el SII (fuera de esta API)
 
 1. Postular a emisor de factura electrónica en certificación (sii.cl, usuario administrador) y declarar el software.
-2. Obtener el certificado digital del firmante (PFX) y, en el ambiente de certificación (maullin.sii.cl), descargar los **CAF de certificación** de cada tipo que se probará (33, 34, 52, 56, 61; 39 y 41 para boletas).
+2. Obtener el certificado digital del firmante (PFX) y, en el ambiente de certificación (maullin.sii.cl), descargar los **CAF de certificación** de cada tipo que se probará (33, 34, 52, 56, 61; 39 y 41 para boletas; 110, 111 y 112 para exportación).
 3. Anotar el **número y la fecha de resolución** publicados para su empresa en el ambiente de certificación (en certificación el número suele ser 0).
 4. Descargar el **set de pruebas** (texto) desde el menú de certificación.
 
@@ -103,7 +103,7 @@ El SII exige, además del sobre de documentos, el **Libro de Ventas** (con los d
 ```bash
 P=2026-11                      # período de los documentos del set
 
-# Libro de Ventas desde los documentos emitidos en el período (33, 34, 56, 61; ESPECIAL no incluye boletas)
+# Libro de Ventas desde los documentos emitidos en el período (33, 34, 56, 61, 110, 111, 112; ESPECIAL no incluye boletas)
 curl -H "$K" -X POST $B/empresas/76086428-5/libros/ventas -H 'content-type: application/json'   -d "{\"periodo\":\"$P\",\"tipoLibro\":\"ESPECIAL\",\"tipoEnvio\":\"TOTAL\",\"folioNotificacion\":1}"
 
 # Libro de Compras: los documentos del set de compras se envían en el JSON (con DTE recibidos en la base, ver sección 8: "desdeRecibidos":true)
@@ -221,6 +221,42 @@ curl -H "$K" -X POST $B/documentos/<id>/complementar-traslado -H 'content-type: 
 ```
 
 `IndTraslado` 10 (GDT), 11 y 12 responden 422 mientras `PERMITIR_INDTRASLADO_RES144=false` (el XSD oficial del SII aún no los enumera; ver `apps/api/src/dte-core/README.md`). La guía reemplazada debe anularse a mano en el Registro de Guías de Despacho del sitio del SII.
+
+## 9c. Documentos de exportación (110, 111, 112) y su set de pruebas
+
+Requiere CAF de certificación de 110, 111 y 112 (`POST $B/empresas/76086428-5/cafs`, uno por tipo; la carga los acepta). Emisión de una factura de exportación en dólares (el RUT del receptor es siempre 55555555-5 y no se informa; los códigos de país, puerto, vía, cláusula y modalidad son los de las tablas de Aduana, ver `docs/referencias-aduana/README.md`):
+
+```bash
+curl -H "$K" -X POST $B/empresas/76086428-5/documentos -H 'content-type: application/json' -H 'Idempotency-Key: exp-001' -d '{
+  "idDoc": {"tipoDte": 110, "formaPago": 2},
+  "receptor": {"razonSocial": "ACME IMPORT INC", "giro": "Importaciones", "direccion": "350 Fifth Avenue, New York"},
+  "detalle": [{"nombre": "Vino Cabernet Sauvignon caja 6 botellas", "cantidad": 100, "precioUnitario": 45.5, "unidad": "CJ"}],
+  "referencias": [{"tipoDocRef": "807", "folioRef": "2026-123456-7", "razonRef": "DUS"}],
+  "exportacion": {
+    "moneda": "DOLAR USA", "tipoCambio": 925.4567, "formaPagoExportacion": 11,
+    "extranjero": {"numId": "US-12-3456789", "nacionalidad": 225},
+    "aduana": {"codigoModalidadVenta": 1, "codigoClausulaVenta": 5, "totalClausulaVenta": 4550,
+      "codigoViaTransporte": 1, "codigoPuertoEmbarque": 905, "codigoPuertoDesembarque": 134,
+      "totalBultos": 100, "codigoPaisReceptor": 225, "codigoPaisDestino": 225}}}'
+# Nota de crédito de exportación que anula o corrige la factura (la 111, de débito, es igual con tipoDte 111)
+curl -H "$K" -X POST $B/empresas/76086428-5/documentos -H 'content-type: application/json' -d '{
+  "idDoc": {"tipoDte": 112}, "receptor": {"razonSocial": "ACME IMPORT INC"},
+  "detalle": [{"nombre": "Devolución parcial", "cantidad": 10, "precioUnitario": 45.5}],
+  "referencias": [{"tipoDocRef": "110", "folioRef": 1, "codRef": 3, "razonRef": "Devolución parcial"}],
+  "exportacion": {"moneda": "DOLAR USA", "tipoCambio": 930.12, "extranjero": {"nacionalidad": 225}}}'
+curl -H "$K" -X POST $B/empresas/76086428-5/envios -H 'content-type: application/json' -d '{"documentoIds":["<id-110>","<id-112>"]}'   # mismo EnvioDTE que cualquier DTE
+curl -H "$K" -X POST $B/documentos/<id-110>/consultar-estado   # getEstDte con RUT receptor 55555555-5 y monto en pesos
+curl -H "$K" -o 110.pdf "$B/documentos/<id-110>/pdf"           # carta, con moneda, equivalente en pesos y datos de Aduana (sin cedible)
+```
+
+**Set de exportación.** Es un set aparte que entrega el SII (no figura en `SII_Instrucciones_Set_de_Pruebas.pdf`), así que la herramienta lo lee solo en **JSON** (ver `apps/api/src/certificacion/README.md`): transcriba cada caso con `tipoDte` 110/111/112, `items` (precios en la moneda del caso), `exportacion` y `referencias[].caso` para las notas. Primero `--simular` (valida cada XML y el sobre contra el XSD y escribe los PDF), luego sin `--simular`:
+
+```bash
+npm run certificacion:set -- --empresa 76086428-5 --archivo set-exportacion.json --simular --salida ./salida-set-exp
+npm run certificacion:set -- --empresa 76086428-5 --archivo set-exportacion.json --libros --compras compras.json
+```
+
+El libro de ventas (`--libros`) incluye 110/111/112 con los montos en pesos y el receptor extranjero (`NumId`, `Nacionalidad`). Los ajustes de tipo de cambio (códigos 500/501 del IEV) no se generan. Supuestos aún sin confirmar con el SII: `MNT` del TED en pesos, `IndExe 1` en las líneas, puertos obligatorios en la exportación de bienes y que el set se envía en un sobre normal `EnvioDTE`.
 
 ## 9. Qué sigue
 

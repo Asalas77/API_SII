@@ -3,7 +3,7 @@ import iconv from 'iconv-lite';
 import { extraerMarcadoresNota, type CampoTraslado } from '../dte-core/documento/traslado.js';
 
 /** Tipos soportados por la representación impresa. */
-export type TipoImpresion = 33 | 34 | 39 | 41 | 52 | 56 | 61;
+export type TipoImpresion = 33 | 34 | 39 | 41 | 52 | 56 | 61 | 110 | 111 | 112;
 
 export const NOMBRES_DOCUMENTO: Readonly<Record<TipoImpresion, string>> = {
   33: 'FACTURA ELECTRÓNICA',
@@ -13,6 +13,9 @@ export const NOMBRES_DOCUMENTO: Readonly<Record<TipoImpresion, string>> = {
   52: 'GUÍA DE DESPACHO ELECTRÓNICA',
   56: 'NOTA DE DÉBITO ELECTRÓNICA',
   61: 'NOTA DE CRÉDITO ELECTRÓNICA',
+  110: 'FACTURA DE EXPORTACIÓN ELECTRÓNICA',
+  111: 'NOTA DE DÉBITO DE EXPORTACIÓN ELECTRÓNICA',
+  112: 'NOTA DE CRÉDITO DE EXPORTACIÓN ELECTRÓNICA',
 };
 
 /** Nombre en palabras de un documento referenciado (`TpoDocRef`). Si no se conoce se devuelve el código. */
@@ -33,6 +36,9 @@ export const NOMBRES_DOC_REFERENCIA: Readonly<Record<string, string>> = {
   '56': 'Nota de Débito Electrónica',
   '60': 'Nota de Crédito',
   '61': 'Nota de Crédito Electrónica',
+  '110': 'Factura de Exportación Electrónica',
+  '111': 'Nota de Débito de Exportación Electrónica',
+  '112': 'Nota de Crédito de Exportación Electrónica',
   '801': 'Orden de Compra',
   '802': 'Nota de Pedido',
   '803': 'Contrato',
@@ -124,6 +130,48 @@ export interface TrasladoImpresion {
   marcadores: Partial<Record<CampoTraslado, 'Diferido' | 'Sin Dato'>>;
 }
 
+/** Datos de un documento de exportación (110-112): moneda, equivalente en pesos, receptor extranjero y Aduana. */
+export interface ExportacionImpresion {
+  moneda: string;
+  /** Total en la moneda de la operación (`Totales/MntTotal`, hasta 4 decimales). */
+  montoTotal: number;
+  montoExento: number;
+  /** `OtraMoneda`: equivalente en pesos chilenos. */
+  pesos?: { moneda: string; tipoCambio?: number; montoExento?: number; montoTotal: number };
+  indServicio?: number;
+  tipoDespacho?: number;
+  formaPagoExportacion?: number;
+  fechaCancelacion?: string;
+  extranjero: { numId?: string; nacionalidad?: number; idAdicional?: string };
+  /** Códigos de Aduana tal como vienen en el XML (`Transporte/Aduana`). */
+  aduana: {
+    codigoModalidadVenta?: number;
+    codigoClausulaVenta?: number;
+    totalClausulaVenta?: number;
+    codigoViaTransporte?: number;
+    nombreTransporte?: string;
+    rutCompaniaTransporte?: string;
+    nombreCompaniaTransporte?: string;
+    booking?: string;
+    operador?: string;
+    codigoPuertoEmbarque?: number;
+    codigoPuertoDesembarque?: number;
+    tara?: number;
+    codigoUnidadTara?: number;
+    pesoBruto?: number;
+    codigoUnidadPesoBruto?: number;
+    pesoNeto?: number;
+    codigoUnidadPesoNeto?: number;
+    totalItems?: number;
+    totalBultos?: number;
+    bultos: { codigoTipo?: number; cantidad?: number; marcas?: string; idContenedor?: string; sello?: string; emisorSello?: string }[];
+    montoFlete?: number;
+    montoSeguro?: number;
+    codigoPaisReceptor?: number;
+    codigoPaisDestino?: number;
+  };
+}
+
 export interface DatosImpresion {
   tipo: TipoImpresion;
   nombreDocumento: string;
@@ -137,6 +185,8 @@ export interface DatosImpresion {
   indTraslado?: number;
   /** Presente si el documento trae `Transporte` o datos diferidos. */
   traslado?: TrasladoImpresion;
+  /** Solo 110, 111 y 112. */
+  exportacion?: ExportacionImpresion;
   emisor: PersonaImpresion & { actecos: number[]; sucursalSii?: number };
   receptor: PersonaImpresion;
   detalle: LineaImpresion[];
@@ -149,7 +199,7 @@ export interface DatosImpresion {
   timestampFirma?: string;
 }
 
-const ETIQUETAS_ARREGLO = new Set(['Detalle', 'DscRcgGlobal', 'Referencia', 'Acteco', 'ImptoReten', 'CdgItem']);
+const ETIQUETAS_ARREGLO = new Set(['Detalle', 'DscRcgGlobal', 'Referencia', 'Acteco', 'ImptoReten', 'CdgItem', 'TipoBultos']);
 
 const parser = new XMLParser({
   ignoreAttributes: true,
@@ -267,6 +317,65 @@ function extraerTraslado(tr: Nodo, emisor: Nodo, dscPrimerItem: string | undefin
   };
 }
 
+function extraerExportacion(enc: Nodo, idDoc: Nodo, tot: Nodo): ExportacionImpresion {
+  const ext = nodo(nodo(enc.Receptor).Extranjero);
+  const a = nodo(nodo(enc.Transporte).Aduana);
+  const otra = nodo(enc.OtraMoneda);
+  return {
+    moneda: texto(tot.TpoMoneda) ?? '',
+    montoTotal: numero(tot.MntTotal) ?? 0,
+    montoExento: numero(tot.MntExe) ?? 0,
+    ...(texto(otra.TpoMoneda)
+      ? {
+          pesos: {
+            moneda: texto(otra.TpoMoneda) as string,
+            tipoCambio: numero(otra.TpoCambio),
+            montoExento: numero(otra.MntExeOtrMnda),
+            montoTotal: numero(otra.MntTotOtrMnda) ?? 0,
+          },
+        }
+      : {}),
+    indServicio: numero(idDoc.IndServicio),
+    tipoDespacho: numero(idDoc.TipoDespacho),
+    formaPagoExportacion: numero(idDoc.FmaPagExp),
+    fechaCancelacion: texto(idDoc.FchCancel),
+    extranjero: { numId: texto(ext.NumId), nacionalidad: numero(ext.Nacionalidad), idAdicional: texto(ext.IdAdicRecep) },
+    aduana: {
+      codigoModalidadVenta: numero(a.CodModVenta),
+      codigoClausulaVenta: numero(a.CodClauVenta),
+      totalClausulaVenta: numero(a.TotClauVenta),
+      codigoViaTransporte: numero(a.CodViaTransp),
+      nombreTransporte: texto(a.NombreTransp),
+      rutCompaniaTransporte: texto(a.RUTCiaTransp) ? rutConPuntos(texto(a.RUTCiaTransp) as string) : undefined,
+      nombreCompaniaTransporte: texto(a.NomCiaTransp),
+      booking: texto(a.Booking),
+      operador: texto(a.Operador),
+      codigoPuertoEmbarque: numero(a.CodPtoEmbarque),
+      codigoPuertoDesembarque: numero(a.CodPtoDesemb),
+      tara: numero(a.Tara),
+      codigoUnidadTara: numero(a.CodUnidMedTara),
+      pesoBruto: numero(a.PesoBruto),
+      codigoUnidadPesoBruto: numero(a.CodUnidPesoBruto),
+      pesoNeto: numero(a.PesoNeto),
+      codigoUnidadPesoNeto: numero(a.CodUnidPesoNeto),
+      totalItems: numero(a.TotItems),
+      totalBultos: numero(a.TotBultos),
+      bultos: arreglo(a.TipoBultos).map((b) => ({
+        codigoTipo: numero(b.CodTpoBultos),
+        cantidad: numero(b.CantBultos),
+        marcas: texto(b.Marcas),
+        idContenedor: texto(b.IdContainer),
+        sello: texto(b.Sello),
+        emisorSello: texto(b.EmisorSello),
+      })),
+      montoFlete: numero(a.MntFlete),
+      montoSeguro: numero(a.MntSeguro),
+      codigoPaisReceptor: numero(a.CodPaisRecep),
+      codigoPaisDestino: numero(a.CodPaisDestin),
+    },
+  };
+}
+
 /**
  * Parsea un DTE firmado (o el DTE número `indice` de un sobre EnvioDTE/EnvioBOLETA) y devuelve el modelo
  * necesario para imprimirlo. Acepta string (ya decodificado) o Buffer (se decodifica según la declaración XML,
@@ -275,7 +384,9 @@ function extraerTraslado(tr: Nodo, emisor: Nodo, dscPrimerItem: string | undefin
 export function extraerDatosImpresion(xml: string | Buffer, indice = 0): DatosImpresion {
   const dteTxt = extraerDte(aTexto(xml), indice);
   const raiz = nodo(parser.parse(dteTxt));
-  const doc = nodo(nodo(raiz.DTE).Documento);
+  const dteNodo = nodo(raiz.DTE);
+  // Los documentos de exportación (110-112) usan `Exportaciones` en lugar de `Documento`.
+  const doc = nodo(dteNodo.Documento ?? dteNodo.Exportaciones);
   const enc = nodo(doc.Encabezado);
   const idDoc = nodo(enc.IdDoc);
   const em = nodo(enc.Emisor);
@@ -318,7 +429,7 @@ export function extraerDatosImpresion(xml: string | Buffer, indice = 0): DatosIm
       tipoValor,
       valor,
       exento,
-      monto: tipoValor === '%' ? Math.round((base * valor) / 100) : valor,
+      monto: tipoValor === '%' ? (tipo >= 110 ? Math.round(base * valor * 100) / 10000 : Math.round((base * valor) / 100)) : valor,
     };
   });
 
@@ -334,7 +445,8 @@ export function extraerDatosImpresion(xml: string | Buffer, indice = 0): DatosIm
     };
   });
 
-  const traslado = extraerTraslado(nodo(enc.Transporte), em, detalle[0]?.descripcion);
+  const esExportacion = tipo >= 110 && tipo <= 112;
+  const traslado = esExportacion ? undefined : extraerTraslado(nodo(enc.Transporte), em, detalle[0]?.descripcion);
 
   return {
     tipo: tipo as TipoImpresion,
@@ -345,6 +457,7 @@ export function extraerDatosImpresion(xml: string | Buffer, indice = 0): DatosIm
     formaPago: numero(idDoc.FmaPago),
     indTraslado: numero(idDoc.IndTraslado),
     ...(traslado ? { traslado } : {}),
+    ...(esExportacion ? { exportacion: extraerExportacion(enc, idDoc, tot) } : {}),
     emisor: {
       ...persona(em.RUTEmisor, {
         razon: em.RznSoc ?? em.RznSocEmisor,

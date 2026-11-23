@@ -5,10 +5,10 @@ import { construirDte } from '../dte-core/documento/construir-dte.js';
 import type { DocumentoDte, TipoDte } from '../dte-core/documento/tipos.js';
 import { construirEnvioDte } from '../dte-core/envio/envio.js';
 import { parsearCaf, type Caf } from '../dte-core/caf/caf.js';
-import { documentoDePrueba, RUT_EMISOR_PRUEBA } from '../dte-core/testing/documentos-prueba.js';
+import { documentoDePrueba, documentoExportacionDePrueba, RUT_EMISOR_PRUEBA } from '../dte-core/testing/documentos-prueba.js';
 import { generarCertificadoPrueba } from '../dte-core/testing/testing.js';
 import { extraerDatosImpresion } from './datos-impresion.js';
-import { admiteCedible, filasTraslado, formatearMonto, generarPdf } from './generar-pdf.js';
+import { admiteCedible, filasExportacion, filasTraslado, formatearMonto, formatearMontoMoneda, generarPdf } from './generar-pdf.js';
 import { bytesTed, dimensionesPng, generarPdf417 } from './timbre-pdf417.js';
 
 const certificado = generarCertificadoPrueba({ rut: '12345678-5' });
@@ -277,5 +277,60 @@ describe('generarPdf', () => {
     expect(formatearMonto(1234)).toBe('1.234');
     expect(formatearMonto(1234567)).toBe('1.234.567');
     expect(formatearMonto(-999)).toBe('-999');
+  });
+});
+
+describe('documentos de exportación (110, 111, 112)', () => {
+  it('extrae moneda, equivalente en pesos, receptor extranjero y datos de Aduana', () => {
+    const r = dte(documentoExportacionDePrueba(110));
+    const d = extraerDatosImpresion(r.xmlIso);
+    expect(d.tipo).toBe(110);
+    expect(d.nombreDocumento).toBe('FACTURA DE EXPORTACIÓN ELECTRÓNICA');
+    expect(d.receptor.rut).toBe('55.555.555-5');
+    expect(d.exportacion).toMatchObject({
+      moneda: 'DOLAR USA',
+      montoTotal: 7192.8317,
+      pesos: { moneda: 'PESO CL', tipoCambio: 925.4567, montoTotal: 6656654 },
+      extranjero: { numId: 'US-12-3456789', nacionalidad: 225 },
+    });
+    expect(d.exportacion?.aduana).toMatchObject({ codigoClausulaVenta: 5, codigoViaTransporte: 1, codigoPuertoEmbarque: 905, totalBultos: 151 });
+    expect(d.exportacion?.aduana.bultos).toHaveLength(1);
+    expect(d.detalle[1]).toMatchObject({ cantidad: 50.5, precioUnitario: 52.3333, monto: 2642.8317 });
+    expect(d.tedXml).toBe(r.ted);
+  });
+
+  it('imprime códigos de Aduana traducidos a su glosa', () => {
+    const d = extraerDatosImpresion(dte(documentoExportacionDePrueba(110)).xmlIso);
+    const filas = new Map(filasExportacion(d));
+    expect(filas.get('Moneda:')).toBe('DOLAR USA');
+    expect(filas.get('Cláusula de venta:')).toBe('FOB - FRANCO A BORDO (5)');
+    expect(filas.get('Vía de transporte:')).toBe('MARÍTIMA, FLUVIAL Y LACUSTRE (1)');
+    expect(filas.get('Puerto de embarque:')).toBe('VALPARAÍSO (905)');
+    expect(filas.get('Puerto de desembarque:')).toBe('NEW YORK (134)');
+    expect(filas.get('País de destino:')).toContain('ESTADOS UNIDOS');
+    expect(filas.get('Modalidad de venta:')).toBe('A FIRME (1)');
+    expect(filas.get('Total bultos:')).toBe('151');
+  });
+
+  it('formatea moneda con coma decimal, mínimo 2 y máximo 4 decimales', () => {
+    expect(formatearMontoMoneda(1234.5)).toBe('1.234,50');
+    expect(formatearMontoMoneda(7192.8317)).toBe('7.192,8317');
+    expect(formatearMontoMoneda(0.1, 6)).toBe('0,10');
+    expect(formatearMontoMoneda(52.3333, 6)).toBe('52,3333');
+  });
+
+  it('no admite copia cedible; PDF carta para 110, 111 y 112 (incluso si se pide térmica)', async () => {
+    expect(admiteCedible(110 as never)).toBe(false);
+    expect(admiteCedible(112 as never)).toBe(false);
+    for (const tipo of [110, 111, 112] as const) {
+      const pdf = await generarPdf(dte(documentoExportacionDePrueba(tipo)).xmlIso, {
+        unidadSii: 'SANTIAGO CENTRO',
+        resolucion,
+        cedible: true,
+        formato: 'termica80',
+      });
+      expect(pdf.subarray(0, 5).toString()).toBe('%PDF-');
+      guarda(`exportacion-${tipo}-carta.pdf`, pdf);
+    }
   });
 });

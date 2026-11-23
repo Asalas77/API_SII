@@ -23,7 +23,7 @@ export interface DocumentoParaLibro {
 }
 
 /** Tipos del libro de ventas que van con Detalle; las boletas solo como resumen. */
-export const TIPOS_VENTA_DETALLE: readonly number[] = [33, 34, 56, 61];
+export const TIPOS_VENTA_DETALLE: readonly number[] = [33, 34, 56, 61, 110, 111, 112];
 export const TIPOS_BOLETA_RESUMEN: readonly number[] = [39, 41];
 const TASA_IVA = 19;
 
@@ -77,6 +77,19 @@ export function totalesDeXml(xml: string): {
   };
 }
 
+/**
+ * `NumId` y `Nacionalidad` del receptor extranjero de un documento de exportación. Los montos del libro son los
+ * equivalentes en pesos (columnas `monto_exento`/`monto_total` de `documentos`), no los de `Totales` del XML.
+ */
+export function extranjeroDeXml(xml: string): { numId?: string; nacionalidad?: string } | undefined {
+  const bloque = /<Extranjero>([\s\S]*?)<\/Extranjero>/.exec(xml)?.[1];
+  if (!bloque) return undefined;
+  const numId = /<NumId>([^<]*)<\/NumId>/.exec(bloque)?.[1];
+  const nacionalidad = /<Nacionalidad>([^<]*)<\/Nacionalidad>/.exec(bloque)?.[1];
+  if (!numId && !nacionalidad) return undefined;
+  return { ...(numId ? { numId } : {}), ...(nacionalidad ? { nacionalidad } : {}) };
+}
+
 interface ReferenciaXml {
   tipo: number;
   folio: number;
@@ -108,7 +121,7 @@ function rutReceptor(d: DocumentoParaLibro): string | undefined {
 }
 
 /**
- * Línea del libro de ventas para un documento emitido (33, 34, 56, 61). Usa las columnas de montos
+ * Línea del libro de ventas para un documento emitido (33, 34, 56, 61 y exportación 110, 111, 112). Usa las columnas de montos
  * y, si faltan, el `Totales` del XML firmado; los impuestos adicionales salen siempre del XML. Un
  * documento en estado `anulado` (folio anulado) se informa solo con su tipo y folio.
  */
@@ -119,13 +132,20 @@ export function documentoADetalleVenta(d: DocumentoParaLibro): DetalleLibroCV {
   const exento = d.montoExento ?? x.exento ?? 0;
   const iva = d.iva ?? x.iva ?? 0;
   // Nota de crédito que anula por completo otro documento: se informa la referencia.
-  const anulada = d.tipoDte === 61 ? referenciasDeXml(d.xmlFirmado).find((r) => r.codRef === 1 && [33, 34, 56].includes(r.tipo)) : undefined;
+  const anulada =
+    d.tipoDte === 61
+      ? referenciasDeXml(d.xmlFirmado).find((r) => r.codRef === 1 && [33, 34, 56].includes(r.tipo))
+      : d.tipoDte === 112
+        ? referenciasDeXml(d.xmlFirmado).find((r) => r.codRef === 1 && [110, 111].includes(r.tipo))
+        : undefined;
+  const extranjero = d.tipoDte >= 110 && d.tipoDte <= 112 ? extranjeroDeXml(d.xmlFirmado) : undefined;
   return {
     tipoDoc: d.tipoDte,
     folio: d.folio,
     fechaDoc: d.fechaEmision,
     ...(rutReceptor(d) ? { rutContraparte: rutReceptor(d) } : {}),
     ...(d.razonSocialReceptor ? { razonSocial: d.razonSocialReceptor } : {}),
+    ...(extranjero ? { extranjero } : {}),
     ...(neto > 0 ? { tasaIva: x.tasaIva ?? TASA_IVA } : {}),
     ...(exento > 0 ? { montoExento: exento } : {}),
     ...(neto > 0 ? { montoNeto: neto } : {}),

@@ -36,6 +36,9 @@ const TIPOS_VALIDOS: ReadonlyArray<{ valor: string; descripcion: string }> = [
   { valor: '52', descripcion: '52 Guia de despacho' },
   { valor: '56', descripcion: '56 Nota de debito' },
   { valor: '61', descripcion: '61 Nota de credito' },
+  { valor: '110', descripcion: '110 Factura de exportacion' },
+  { valor: '111', descripcion: '111 Nota de debito de exportacion' },
+  { valor: '112', descripcion: '112 Nota de credito de exportacion' },
 ];
 
 /** UDFs de la sección 4 del diseño (más los de referencia manual y el giro del socio). */
@@ -105,6 +108,19 @@ export const UDFS: readonly DefinicionUdf[] = [
   { nombre: 'SII_RazonRef', descripcion: 'SII Razon referencia', tipo: 'db_Alpha', tamano: 90, tablas: NOTAS },
   { nombre: 'SII_TipoDocRef', descripcion: 'SII Tipo doc. referencia', tipo: 'db_Alpha', tamano: 3, tablas: NOTAS },
   { nombre: 'SII_FolioRef', descripcion: 'SII Folio referencia', tipo: 'db_Alpha', tamano: 18, tablas: NOTAS },
+  // Exportación (110-112): códigos de las tablas de Aduana (Anexo 51 del Compendio de Normas Aduaneras).
+  { nombre: 'SII_ModVenta', descripcion: 'SII Modalidad de venta (Aduana)', tipo: 'db_Alpha', tamano: 2, tablas: NOTAS },
+  { nombre: 'SII_ClausulaVenta', descripcion: 'SII Clausula de venta (Aduana)', tipo: 'db_Alpha', tamano: 2, tablas: NOTAS },
+  { nombre: 'SII_TotClausula', descripcion: 'SII Total clausula de venta', tipo: 'db_Alpha', tamano: 20, tablas: NOTAS },
+  { nombre: 'SII_ViaTransp', descripcion: 'SII Via de transporte (Aduana)', tipo: 'db_Alpha', tamano: 2, tablas: NOTAS },
+  { nombre: 'SII_PtoEmbarque', descripcion: 'SII Puerto de embarque (Aduana)', tipo: 'db_Alpha', tamano: 4, tablas: NOTAS },
+  { nombre: 'SII_PtoDesemb', descripcion: 'SII Puerto de desembarque (Aduana)', tipo: 'db_Alpha', tamano: 4, tablas: NOTAS },
+  { nombre: 'SII_PaisReceptor', descripcion: 'SII Pais receptor (Aduana)', tipo: 'db_Alpha', tamano: 3, tablas: NOTAS },
+  { nombre: 'SII_PaisDestino', descripcion: 'SII Pais destino (Aduana)', tipo: 'db_Alpha', tamano: 3, tablas: NOTAS },
+  { nombre: 'SII_TotBultos', descripcion: 'SII Total bultos', tipo: 'db_Numeric', tamano: 11, tablas: NOTAS },
+  { nombre: 'SII_TipoBulto', descripcion: 'SII Tipo de bulto (Aduana)', tipo: 'db_Alpha', tamano: 3, tablas: NOTAS },
+  { nombre: 'SII_FormaPagoExp', descripcion: 'SII Forma de pago exportacion (Aduana)', tipo: 'db_Alpha', tamano: 2, tablas: NOTAS },
+  { nombre: 'SII_IndServicio', descripcion: 'SII Ind. servicio exportacion', tipo: 'db_Alpha', tamano: 1, tablas: NOTAS },
   { nombre: 'SII_Giro', descripcion: 'SII Giro', tipo: 'db_Alpha', tamano: 40, tablas: ['OCRD'] },
 ];
 

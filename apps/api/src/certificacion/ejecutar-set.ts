@@ -260,7 +260,7 @@ async function ejecutarSetEnContexto(
   return resultado;
 }
 
-const TIPOS_VENTAS_LIBRO = [33, 34, 56, 61];
+const TIPOS_VENTAS_LIBRO = [33, 34, 56, 61, 110, 111, 112];
 
 /**
  * Genera los libros del set. En modo simulado arma y valida los libros (sin guardar ni enviar) y
@@ -293,7 +293,7 @@ async function generarLibros(
   const ventasIds = ids(TIPOS_VENTAS_LIBRO);
   if (opciones.ventas !== false) {
     if (ventasIds.length === 0) {
-      resultado.advertencias.push('Libro de ventas omitido: el set no emitió facturas ni notas (33, 34, 56, 61)');
+      resultado.advertencias.push('Libro de ventas omitido: el set no emitió facturas ni notas (33, 34, 56, 61, 110, 111, 112)');
     } else {
       const dto = {
         periodo,

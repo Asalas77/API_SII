@@ -1,6 +1,6 @@
 # API SII — Facturación y boletas electrónicas (Chile) + add-on SAP Business One
 
-API REST multiempresa para emitir **Documentos Tributarios Electrónicos** (facturas 33/34, guías 52, notas 56/61) y
+API REST multiempresa para emitir **Documentos Tributarios Electrónicos** (facturas 33/34, guías 52, notas 56/61 y exportación 110/111/112) y
 **boletas electrónicas** (39/41) ante el Servicio de Impuestos Internos de Chile, con una integración posterior para
 SAP Business One. Las decisiones de arquitectura, la estrategia de pruebas y el plan por fases están en
 [`docs/01-opciones-arquitectura-y-pruebas.md`](docs/01-opciones-arquitectura-y-pruebas.md).
@@ -19,7 +19,7 @@ La documentación de ingeniería de diseño completa (arquitectura, datos, flujo
 | `apps/sap-b1-worker/` | Worker de integración con SAP Business One (fase 1): lee documentos por Service Layer, los emite en la API `/v1`, los envía al SII y escribe folio/estado en UDFs `U_SII_*`. Node 24, TypeScript, sin dependencias de runtime; ver su README |
 | `apps/sap-b1-addon/` | Add-on C# de SAP Business One (fase 2): núcleo netstandard2.0 probado con fakes (`SapB1Addon.Core`, xUnit) y capa UI API/DI API net48 x64 que solo compila con el SDK de SAP (`-p:SapB1SdkDir=...`); botones Emitir/Reenviar/PDF/Estado/Validar sobre la misma API y UDF que el worker. Sin compilar ni probar contra un B1 real; ver su README |
 | `apps/api/resources/sii/` | XSD oficiales del SII (paquete del 2026-02-19 y `EnvioBOLETA_v11.xsd`) y OpenAPI oficial de la API de boletas |
-| `docs/` | Documento de arquitectura y referencias oficiales descargadas (`docs/referencias-sii/`) |
+| `docs/` | Documento de arquitectura y referencias oficiales descargadas (`docs/referencias-sii/` y, para exportación, `docs/referencias-aduana/`) |
 | `docker-compose.yml` | PostgreSQL 16 y Redis 7 para desarrollo |
 
 ## Requisitos

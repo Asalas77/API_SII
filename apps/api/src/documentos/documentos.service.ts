@@ -11,6 +11,7 @@ import {
   aIso88591,
   construirDte,
   esBoleta,
+  esExportacion,
   parsearCaf,
   separarRut,
   TASA_IVA,
@@ -46,7 +47,12 @@ export interface DocumentoRespuesta {
     montoExento: number | null;
     tasaIva: number;
     iva: number | null;
+    /** En pesos; en exportación es el equivalente en CLP del total en `moneda`. */
     montoTotal: number;
+    /** Solo exportación (110-112): moneda de la operación, tipo de cambio y total en esa moneda. */
+    moneda: string | null;
+    tipoCambio: number | null;
+    montoMoneda: number | null;
   };
   trackId: string | null;
   reparos: unknown;
@@ -86,6 +92,9 @@ export function aRespuestaDocumento(
       tasaIva: d.montoNeto ? TASA_IVA : 0,
       iva: d.iva,
       montoTotal: d.montoTotal,
+      moneda: d.moneda ?? null,
+      tipoCambio: d.tipoCambio ?? null,
+      montoMoneda: d.montoMoneda ?? null,
     },
     trackId: d.trackId,
     reparos: d.reparos ?? null,
@@ -117,6 +126,9 @@ export function huellaSolicitud(dto: unknown): string {
   return createHash('sha256').update(canonico(dto)).digest('hex');
 }
 
+/** RUT del receptor de todo documento de exportación (formato DTE v2.5). */
+const RUT_EXPORTACION = '55555555-5';
+
 function partirRut(rut: string): { rut: string; dv: string } {
   const r = separarRut(rut);
   if (!r) throw documentoInvalido(`RUT inválido: ${rut}`);
@@ -132,13 +144,27 @@ export function armarDocumento(
 ): DocumentoDte {
   const tipo = dto.idDoc.tipoDte;
   const boleta = esBoleta(tipo);
+  const exportacion = esExportacion(tipo);
+  if (exportacion && !dto.exportacion) {
+    throw documentoInvalido('exportacion es obligatorio en los documentos de exportación (110, 111, 112)', [
+      { campo: 'exportacion', mensaje: 'es obligatorio (moneda, tipo de cambio, receptor extranjero y datos de Aduana)' },
+    ]);
+  }
+  if (!exportacion && dto.exportacion) {
+    throw documentoInvalido('exportacion solo aplica a los tipos 110, 111 y 112', [
+      { campo: 'exportacion', mensaje: 'solo aplica a documentos de exportación' },
+    ]);
+  }
   if (!dto.receptor && !boleta) {
     throw documentoInvalido('El receptor es obligatorio salvo en boletas', [
       { campo: 'receptor', mensaje: 'es obligatorio' },
     ]);
   }
+  if (dto.receptor && !dto.receptor.rut && !exportacion) {
+    throw documentoInvalido('receptor.rut es obligatorio', [{ campo: 'receptor.rut', mensaje: 'es obligatorio' }]);
+  }
   const receptor = dto.receptor
-    ? { ...dto.receptor, ...partirRut(dto.receptor.rut) }
+    ? { ...dto.receptor, ...partirRut(dto.receptor.rut ?? RUT_EXPORTACION) }
     : { rut: '66666666', dv: '6', razonSocial: 'Consumidor final' };
   const sucursal = Number(empresa.codigoSucursalSii);
 
@@ -185,6 +211,7 @@ export function armarDocumento(
       fechaRef: r.fechaRef ?? fechaEmision,
     })),
     impuestosAdicionales: dto.impuestosAdicionales,
+    ...(dto.exportacion ? { exportacion: dto.exportacion } : {}),
     ...(conTraslado ? { traslado: traslado as TrasladoDte } : {}),
     ...(boleta && empresa.rutProveedorSoftware !== null
       ? {
@@ -330,6 +357,7 @@ export class DocumentosService {
           },
         );
         const t = construido.totales;
+        const x = construido.totalesExportacion;
         return em.save(
           em.create(Documento, {
             empresaId: empresa.id,
@@ -342,6 +370,9 @@ export class DocumentosService {
             montoExento: t.mntExe,
             iva: t.iva,
             montoTotal: t.mntTotal,
+            moneda: x?.moneda ?? null,
+            tipoCambio: x?.tipoCambio ?? null,
+            montoMoneda: x?.montoTotal ?? null,
             estado: 'emitido',
             trackId: null,
             xmlFirmado: construido.xmlFirmado,
@@ -613,7 +644,7 @@ function receptorColumnas(dto: EmitirDocumentoDto) {
       razonSocialReceptor: 'Consumidor final',
     };
   }
-  const r = partirRut(dto.receptor.rut);
+  const r = partirRut(dto.receptor.rut ?? RUT_EXPORTACION);
   return {
     rutReceptor: Number(r.rut),
     dvReceptor: r.dv,

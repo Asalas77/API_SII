@@ -13,6 +13,43 @@ namespace SapB1Addon.Core.Api
         [JsonPropertyName("referencias")] public List<CuerpoReferencia>? Referencias { get; set; }
         [JsonPropertyName("origen")] public Dictionary<string, object>? Origen { get; set; }
         [JsonPropertyName("traslado")] public CuerpoTraslado? Traslado { get; set; }
+        [JsonPropertyName("exportacion")] public CuerpoExportacion? Exportacion { get; set; }
+    }
+
+    /// <summary>Bloque <c>exportacion</c> de la API (ver <c>ExportacionDte</c>); montos en la moneda del documento.</summary>
+    public class CuerpoExportacion
+    {
+        [JsonPropertyName("moneda")] public string Moneda { get; set; } = "";
+        [JsonPropertyName("tipoCambio")] public decimal TipoCambio { get; set; }
+        [JsonPropertyName("formaPagoExportacion")] public int? FormaPagoExportacion { get; set; }
+        [JsonPropertyName("extranjero")] public CuerpoExtranjero Extranjero { get; set; } = new CuerpoExtranjero();
+        [JsonPropertyName("aduana")] public CuerpoAduana? Aduana { get; set; }
+    }
+
+    public class CuerpoExtranjero
+    {
+        [JsonPropertyName("numId")] public string? NumId { get; set; }
+        [JsonPropertyName("nacionalidad")] public int Nacionalidad { get; set; }
+    }
+
+    public class CuerpoBulto
+    {
+        [JsonPropertyName("codigoTipo")] public int CodigoTipo { get; set; }
+        [JsonPropertyName("cantidad")] public int Cantidad { get; set; }
+    }
+
+    public class CuerpoAduana
+    {
+        [JsonPropertyName("codigoModalidadVenta")] public int? CodigoModalidadVenta { get; set; }
+        [JsonPropertyName("codigoClausulaVenta")] public int? CodigoClausulaVenta { get; set; }
+        [JsonPropertyName("totalClausulaVenta")] public decimal? TotalClausulaVenta { get; set; }
+        [JsonPropertyName("codigoViaTransporte")] public int? CodigoViaTransporte { get; set; }
+        [JsonPropertyName("codigoPuertoEmbarque")] public int? CodigoPuertoEmbarque { get; set; }
+        [JsonPropertyName("codigoPuertoDesembarque")] public int? CodigoPuertoDesembarque { get; set; }
+        [JsonPropertyName("totalBultos")] public int? TotalBultos { get; set; }
+        [JsonPropertyName("bultos")] public List<CuerpoBulto>? Bultos { get; set; }
+        [JsonPropertyName("codigoPaisReceptor")] public int? CodigoPaisReceptor { get; set; }
+        [JsonPropertyName("codigoPaisDestino")] public int? CodigoPaisDestino { get; set; }
     }
 
     public class CuerpoDireccion
@@ -58,11 +95,14 @@ namespace SapB1Addon.Core.Api
         [JsonPropertyName("fechaVencimiento")] public string? FechaVencimiento { get; set; }
         [JsonPropertyName("formaPago")] public int? FormaPago { get; set; }
         [JsonPropertyName("indTraslado")] public int? IndTraslado { get; set; }
+        /// <summary>Exportación de servicios: 3 a 6.</summary>
+        [JsonPropertyName("indServicio")] public int? IndServicio { get; set; }
     }
 
     public class CuerpoReceptor
     {
-        [JsonPropertyName("rut")] public string Rut { get; set; } = "";
+        /// <summary>Null en exportación (la API usa 55555555-5).</summary>
+        [JsonPropertyName("rut")] public string? Rut { get; set; }
         [JsonPropertyName("razonSocial")] public string RazonSocial { get; set; } = "";
         [JsonPropertyName("giro")] public string? Giro { get; set; }
         [JsonPropertyName("direccion")] public string? Direccion { get; set; }

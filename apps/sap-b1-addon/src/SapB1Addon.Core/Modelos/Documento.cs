@@ -19,6 +19,8 @@ namespace SapB1Addon.Core.Modelos
         public decimal? TaxPercentagePerRow { get; set; }
         public string? MeasureUnit { get; set; }
         public string? UoMCode { get; set; }
+        /// <summary>Moneda de la línea; en un documento en moneda extranjera debe ser la del documento.</summary>
+        public string? Currency { get; set; }
         /// <summary>ObjType del documento base (-1 o 0 si la línea no se copió de otro documento).</summary>
         public int? BaseType { get; set; }
         public int? BaseEntry { get; set; }
@@ -43,6 +45,12 @@ namespace SapB1Addon.Core.Modelos
         /// <summary>Descuento de cabecera (%).</summary>
         public decimal? DiscountPercent { get; set; }
         public int? AttachmentEntry { get; set; }
+        /// <summary>Moneda del documento (código de B1, p. ej. USD); en exportación es la moneda de la operación.</summary>
+        public string? DocCurrency { get; set; }
+        /// <summary>Tipo de cambio del documento (pesos por unidad de <see cref="DocCurrency"/>).</summary>
+        public decimal? DocRate { get; set; }
+        /// <summary>Total del documento en su moneda (informativo: se contrasta con el calculado).</summary>
+        public decimal? DocTotalFc { get; set; }
         public string? Comments { get; set; }
         /// <summary>Dirección de entrega en texto libre (<c>Address2</c>).</summary>
         public string? Address2 { get; set; }
@@ -83,6 +91,21 @@ namespace SapB1Addon.Core.Modelos
         public string? SiiRazonRef { get; set; }
         public string? SiiTipoDocRef { get; set; }
         public string? SiiFolioRef { get; set; }
+        // Exportación (110-112): códigos de Aduana en texto; el mapeo valida el formato y la API las tablas.
+        public string? SiiModVenta { get; set; }
+        public string? SiiClausulaVenta { get; set; }
+        /// <summary>Total de la cláusula de venta en la moneda del documento (por defecto <see cref="DocTotalFc"/>).</summary>
+        public string? SiiTotClausula { get; set; }
+        public string? SiiViaTransp { get; set; }
+        public string? SiiPtoEmbarque { get; set; }
+        public string? SiiPtoDesemb { get; set; }
+        public string? SiiPaisReceptor { get; set; }
+        public string? SiiPaisDestino { get; set; }
+        public string? SiiTotBultos { get; set; }
+        public string? SiiTipoBulto { get; set; }
+        public string? SiiFormaPagoExp { get; set; }
+        /// <summary>3 a 6 si la exportación es de servicios; vacío para bienes.</summary>
+        public string? SiiIndServicio { get; set; }
     }
 
     public class DireccionSocio

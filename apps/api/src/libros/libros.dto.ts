@@ -18,7 +18,7 @@ export interface GenerarLibroBaseDto {
 export interface GenerarLibroVentasDto extends GenerarLibroBaseDto {
   /** Informa además las boletas 39/41 del período como resumen. Por defecto solo en libros MENSUAL. */
   incluirBoletas?: boolean;
-  /** Restringe el libro a estos documentos (deben ser del período y de los tipos 33, 34, 56, 61 o boletas). */
+  /** Restringe el libro a estos documentos (deben ser del período y de los tipos 33, 34, 56, 61, 110, 111, 112 o boletas). */
   documentoIds?: string[];
 }
 

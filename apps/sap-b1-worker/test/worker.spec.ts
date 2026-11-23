@@ -342,7 +342,7 @@ describe('instalar-udfs', () => {
     expect(estado.ValidValuesMD.map((v) => v.Value)).toEqual(['PENDIENTE', 'ENVIANDO', 'EMITIDO', 'ENVIADO', 'ACEPTADO', 'REPAROS', 'RECHAZADO', 'ERROR']);
     expect(estado.Size).toBe(20);
     const tipo = e.sl.udfs.get('ORIN.SII_TipoDTE') as { ValidValuesMD: Array<{ Value: string }> };
-    expect(tipo.ValidValuesMD.map((v) => v.Value)).toEqual(['33', '34', '39', '41', '52', '56', '61']);
+    expect(tipo.ValidValuesMD.map((v) => v.Value)).toEqual(['33', '34', '39', '41', '52', '56', '61', '110', '111', '112']);
     expect(e.sl.udfs.has('ODLN.SII_IndTraslado')).toBe(true);
     expect(e.sl.udfs.has('OINV.SII_IndTraslado')).toBe(false);
     const ind = e.sl.udfs.get('ODLN.SII_IndTraslado') as { ValidValuesMD: Array<{ Value: string }>; Size: number };

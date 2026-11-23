@@ -11,8 +11,11 @@ export const ESTADOS = [
 ] as const;
 export type EstadoSii = (typeof ESTADOS)[number];
 
-export type TipoDte = 33 | 34 | 39 | 41 | 52 | 56 | 61;
-export const TIPOS_DTE: readonly TipoDte[] = [33, 34, 39, 41, 52, 56, 61];
+export type TipoDte = 33 | 34 | 39 | 41 | 52 | 56 | 61 | 110 | 111 | 112;
+export const TIPOS_DTE: readonly TipoDte[] = [33, 34, 39, 41, 52, 56, 61, 110, 111, 112];
+
+/** Exportación: 110 factura (OINV), 111 nota de débito (OINV), 112 nota de crédito (ORIN). */
+export const esExportacion = (t: number): boolean => t === 110 || t === 111 || t === 112;
 
 /** Entidades de Service Layer que el worker procesa. */
 export interface EntidadB1 {
@@ -49,6 +52,8 @@ export interface LineaB1 {
   TaxPercentagePerRow?: number | null;
   MeasureUnit?: string | null;
   UoMCode?: string | null;
+  /** Moneda de la línea; en un documento en moneda extranjera debe ser la del documento. */
+  Currency?: string | null;
   BaseType?: number | null;
   BaseEntry?: number | null;
   BaseLine?: number | null;
@@ -67,6 +72,12 @@ export interface DocumentoB1 {
   PaymentGroupCode?: number | null;
   /** Descuento de cabecera (%). */
   DiscountPercent?: number | null;
+  /** Moneda del documento (código de B1, p. ej. `USD`); en exportación es la moneda de la operación. */
+  DocCurrency?: string | null;
+  /** Tipo de cambio del documento (pesos por unidad de `DocCurrency`). */
+  DocRate?: number | null;
+  /** Total del documento en la moneda del documento (informativo: se contrasta con el calculado). */
+  DocTotalFC?: number | null;
   Comments?: string | null;
   /** Dirección de entrega (texto libre) de la guía. */
   Address2?: string | null;
@@ -109,6 +120,21 @@ export interface DocumentoB1 {
   U_SII_RazonRef?: string | null;
   U_SII_TipoDocRef?: string | null;
   U_SII_FolioRef?: string | null;
+  /** Exportación (110-112), códigos de las tablas de Aduana (Anexo 51 del Compendio de Normas Aduaneras). */
+  U_SII_ModVenta?: string | null;
+  U_SII_ClausulaVenta?: string | null;
+  /** Total de la cláusula de venta en la moneda del documento (por defecto `DocTotalFC`). */
+  U_SII_TotClausula?: string | null;
+  U_SII_ViaTransp?: string | null;
+  U_SII_PtoEmbarque?: string | null;
+  U_SII_PtoDesemb?: string | null;
+  U_SII_PaisReceptor?: string | null;
+  U_SII_PaisDestino?: string | null;
+  U_SII_TotBultos?: number | string | null;
+  U_SII_TipoBulto?: string | null;
+  U_SII_FormaPagoExp?: string | null;
+  /** 3 a 6 si la exportación es de servicios; vacío para bienes. */
+  U_SII_IndServicio?: string | null;
 }
 
 export interface DireccionSocioB1 {

@@ -169,6 +169,18 @@ export class Documento {
   @Column({ name: 'traslado_pendiente', type: 'boolean', default: false })
   trasladoPendiente: boolean;
 
+  /** Exportación (110-112): glosa de la moneda de la operación (`DOLAR USA`); null en el resto. Los montos de arriba están en pesos. */
+  @Column({ type: 'varchar', length: 15, nullable: true })
+  moneda: string | null;
+
+  /** Exportación: pesos chilenos por unidad de moneda. */
+  @Column({ name: 'tipo_cambio', type: 'numeric', precision: 10, scale: 4, nullable: true, transformer: bigintNumero })
+  tipoCambio: number | null;
+
+  /** Exportación: monto total en la moneda de la operación (hasta 4 decimales). */
+  @Column({ name: 'monto_moneda', type: 'numeric', precision: 18, scale: 4, nullable: true, transformer: bigintNumero })
+  montoMoneda: number | null;
+
   /** Metadato opcional para correlacionar con el sistema de origen (p. ej. ERP). */
   @Column({ type: 'jsonb', nullable: true })
   origen: unknown;

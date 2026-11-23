@@ -13,7 +13,8 @@ Núcleo criptográfico y XML para DTE y boletas electrónicas del SII. Dominio p
 | `xsd/` | `validarXsd(xml, 'DTE'|'EnvioDTE'|'EnvioBOLETA'|'RespSII'|'RespuestaEnvioDTE'|'EnvioRecibos'|'LibroCV'|'LibroGuia')` con `libxml2-wasm`; validadores cacheados. |
 | `libros/` | `construirLibroCompraVenta` y `construirLibroGuias`: libros electrónicos IECV y de guías de despacho (ver abajo). |
 | `certificado/` | `cargarPfx` (node-forge): PEM de certificado y clave (PKCS#8), CN, vigencia, RUT del SAN. |
-| `testing/` | Solo pruebas: `generarCertificadoPrueba`, `generarPfxPrueba`, `generarCafPrueba`. |
+| `exportacion/` | Documentos de exportación 110, 111 y 112 (`construirDteExportacion`, totales decimales, validaciones) y `tablas/` con los códigos de Aduana (ver sección Exportación). |
+| `testing/` | Solo pruebas: `generarCertificadoPrueba`, `generarPfxPrueba`, `generarCafPrueba`, `documentoExportacionDePrueba`. |
 
 ## Decisiones
 
@@ -97,11 +98,11 @@ Dominio puro (sin Nest ni red). Formatos: `docs/referencias-sii/pdf/SII_Formato_
 
 ### No cubierto (por ahora)
 
-Libros contables (CAL/COCERTIF), liquidaciones y liquidaciones-factura (`Liquidaciones`, montos negativos), `Ley18211` como monto (solo `TpoImp` 2), tabacos, pasajes (`PsjNac`/`PsjInt`), impuesto a vehículos, `MntNoFact`/`MntPeriodo`, receptor extranjero (`Extranjero`), factor de impuesto adicional (`FctImpAdic`/`TotCredImp`) y tipos de cambio (500/501). `LibroGuia` se valida con una copia del XSD que importa `xmldsig` (ver `resources/sii/xsd/libros/README.md`). Los estados de proceso propios de libros en el SII no figuran en el PDF de QueryEstUp; se reutiliza la clasificación de estados de envío.
+Libros contables (CAL/COCERTIF), liquidaciones y liquidaciones-factura (`Liquidaciones`, montos negativos), `Ley18211` como monto (solo `TpoImp` 2), tabacos, pasajes (`PsjNac`/`PsjInt`), impuesto a vehículos, `MntNoFact`/`MntPeriodo`, factor de impuesto adicional (`FctImpAdic`/`TotCredImp`) y tipos de cambio (500/501). `LibroGuia` se valida con una copia del XSD que importa `xmldsig` (ver `resources/sii/xsd/libros/README.md`). Los estados de proceso propios de libros en el SII no figuran en el PDF de QueryEstUp; se reutiliza la clasificación de estados de envío.
 
 ### Pendientes
 
-Exportación, liquidaciones, factura de compra (46), retenciones y `IVANoRet`, `SubTotInfo`, `Comisiones`, `OtraMoneda`, ítem espectáculo/`InfoTicket` de boletas.
+Liquidaciones, factura de compra (46), retenciones y `IVANoRet`, `SubTotInfo`, `Comisiones`, `OtraMoneda`, ítem espectáculo/`InfoTicket` de boletas.
 
 ## Res. Ex. SII 144/2026: guías y facturas que amparan traslado
 
@@ -142,6 +143,37 @@ El `DTE_v10.xsd` vigente del SII (2026-02-19, idéntico al que se descarga hoy d
 ### No cubierto
 
 Registro de Guías de Despacho (anular una guía reemplazada: es manual en el sitio del SII, no hay web service en el alcance), informar el modelo operacional de transporte (resolutivo 16°, aplicativo web del SII), excepciones de courier/postales (resolutivo 12°) y el envío del ATT.
+
+## Exportación: 110 Factura, 111 Nota de débito y 112 Nota de crédito de exportación
+
+Código: `exportacion/` (`tipos.ts`, `totales.ts`, `construir.ts`, `tablas/`); `construirDte` despacha a `construirDteExportacion` cuando `idDoc.tipoDte` es 110, 111 o 112 y exige el bloque `DocumentoDte.exportacion`. Pruebas: `exportacion/construir.spec.ts` (XML válido contra `DTE_v10.xsd`, firma, TED, sobre `EnvioDTE` junto a una 33, validaciones, redondeo). Fuentes: `DTE_v10.xsd` (elemento `Exportaciones`, hermano de `Documento` y `Liquidacion`; **el XSD manda**), `SII_Formato_DTE_v2.5_2026-02.pdf` (secciones de exportación y obligatoriedad por tipo), `SII_Instructivo_Emision_DTE_2021-10-28.pdf` (TED), `SII_Manual_Muestras_Impresas.pdf`, `SII_Formato_IECV_Libros_Compra_Venta.pdf`.
+
+### Estructura del XML
+
+`<DTE><Exportaciones ID="F{folio}T{tipo}">` con `Encabezado` (`IdDoc` con `TipoDespacho`, `IndServicio`, `FmaPago`, `FmaPagExp`, `FchCancel`...; `Emisor` con `Acteco` obligatorio; `Receptor` con `RUTRecep` **55555555-5**, `RznSocRecep`, `Extranjero(NumId, Nacionalidad, IdAdicRecep)`, `GiroRecep`, `DirRecep`...; `Transporte/Aduana` con los 26 campos del formato; `Totales(TpoMoneda, MntExe, MntTotal)` en la moneda de la operación y `OtraMoneda(TpoMoneda "PESO CL", TpoCambio, MntExeOtrMnda, MntTotOtrMnda)` con el equivalente en pesos), `Detalle`, `DscRcgGlobal`, `Referencia`, `TED`, `TmstFirma`. La firma referencia `#F{folio}T{tipo}` (el `ID` va en `Exportaciones`). Sin `IVA`, `MntNeto` ni impuestos: el monto exento es el total.
+
+### Montos y redondeo (aritmética decimal exacta con BigInt)
+
+- Cantidad y precio: hasta 6 decimales (`Dec12_6Type`). `MontoItem = round4(cantidad x precio) - descuentos` (4 decimales, mitades hacia arriba; el descuento % se redondea sobre el bruto). `MntExe` = `MntTotal` = suma de líneas menos/más descuentos y recargos globales, hasta 4 decimales (decimal 18,4 en el XSD).
+- `DescuentoPct` hasta 2 decimales; `DescuentoMonto` por línea es **entero** (el XSD lo tipa `MntImpType`, entero positivo; la validación lo informa); `ValorDR` global hasta 2 decimales y mínimo 0,01 (`Dec16_2Type`); `TotClauVenta` hasta 2 decimales; `MntFlete`/`MntSeguro` hasta 4 y > 0; pesos hasta 2 decimales.
+- Equivalente en pesos: `round(MntTotal x TpoCambio)` entero (mitades hacia arriba), tipo de cambio de 0,0001 a 999999,9999 pesos por unidad de moneda, informado igual en `MntExeOtrMnda` y `MntTotOtrMnda`. Más de los decimales admitidos en un dato de entrada se rechaza (no se redondea en silencio).
+- **TED**: `RR` 55555555-5, `RSR` razón social del receptor (40) y `MNT` = **monto en pesos enteros** (`MntTotOtrMnda`). El Instructivo de Emisión define `MNT` como "Monto Total del DTE en pesos chilenos, en notación decimal entera (sin decimales)"; el XSD solo exige un decimal de hasta 4 decimales, así que no hay confirmación de si el SII compara contra pesos o contra la moneda de la operación. SUPUESTO: pesos; si el SII exigiera la moneda, cambiar `monto: t.montoTotalPesos` en `construirDteExportacion`. La misma cifra (pesos) es la que usa `getEstDte` (`MontoDte`, "Monto Total del DTE", numérico de hasta 15 posiciones) y las columnas `monto_exento`/`monto_total` de `documentos`; la moneda, el tipo de cambio y el total en moneda extranjera van en `moneda`, `tipo_cambio` y `monto_moneda`.
+
+### Validaciones (`ErrorValidacionDte` con `campo`; mensajes en español)
+
+- Receptor: RUT 55555555-5 obligatorio (`receptor.rut`), razón social, dirección en la factura 110 (formato: obligatorio), `exportacion.extranjero.nacionalidad` obligatoria (el formato la declara opcional; este proyecto la exige) con código de la tabla de países de Aduana.
+- Moneda: glosa de `TipMonType` del XSD, distinta de `PESO` y `PESO CL`; tipo de cambio y decimales.
+- Ítems siempre exentos (`IndExe 1`; SUPUESTO: el formato permite omitirlo). Sin impuestos adicionales, sin `traslado` de la Res. 144 (los datos de transporte van en `exportacion.aduana`), sin `indTraslado`, sin `medioPago` numérico. Hasta 60 líneas, 20 descuentos y 40 referencias.
+- `indServicio` (3 servicios, 4 hotelería, 5 transporte terrestre internacional, 6 servicios prestados y utilizados en el extranjero) o vacío para bienes. Reglas de obligatoriedad de la factura 110 (tabla del formato v2.5): `codigoPaisReceptor` siempre; modalidad, cláusula y total de cláusula salvo `indServicio` 3, 4 o 5; vía de transporte salvo hotelería (4); para bienes además total de bultos, país de destino y **puertos de embarque y desembarque** (el formato v2.5 los marca opcionales y su texto dice "obligatorio excepto indicador servicio 4"; el Manual de Muestras Impresas exige imprimirlos cuando hay transporte de mercaderías, y se exigen). En 111/112 todo `aduana` es opcional.
+- `fechaCancelacion` obligatoria con forma de pago de exportación 32 (anticipo). Bultos: hasta 10 tipos, deben sumar `totalBultos`; `totalItems` debe coincidir con el detalle; unidad obligatoria junto a tara, peso bruto y peso neto; neto no mayor que bruto.
+- 111/112: al menos una referencia a 110, 111 o 112 con `codRef` 1, 2 o 3 (la referencia `SET` no cuenta). Una factura referencia como máximo un DUS (807) y una Carta de Porte (811).
+- **Cláusula y `TotClauVenta`**: el formato solo dice que es "el valor total de la exportación a pagar por el importador según la cláusula de venta (no incluye comisiones ni otros gastos deducibles en el exterior)"; no define una coherencia numérica con la cláusula (FOB, CIF...) ni con el total del documento, de modo que solo se valida que sea > 0 con 2 decimales. Queda a cargo del emisor.
+- Tablas de Aduana (`validarTablasAduana`, por defecto `true`): país, puerto, vía, modalidad, cláusula, forma de pago y tipo de bulto contra `exportacion/tablas`; las unidades de medida solo por formato (tabla parcial). Ver `docs/referencias-aduana/README.md`.
+- CAF: 110-112 no están en `TIPOS_CAF_CON_VENCIMIENTO` (SUPUESTO: no vencen, como el 34; la Res. Ex. 58/2017 cita facturas afectas y notas 56/61).
+
+### Resto del sistema
+
+`TIPOS_DTE` incluye 110-112 (carga de CAF, folios, listados); el sobre `EnvioDTE` los admite en el mismo envío que 33/34/52/56/61 (`SubTotDTE` por tipo, validado contra `EnvioDTE_v10.xsd`) y viajan por el upload normal; la recepción de proveedores no los considera (no se reciben facturas de exportación). Representación impresa: factura de exportación en español, formato carta, con moneda, tipo de cambio, equivalente en pesos, datos de Aduana con glosas, sin copia cedible (el Manual de Muestras Impresas solo exige cedible en 33, 34, 52, 46 y 43). Libro de ventas: `TpoDoc` 110/111/112 con montos en pesos (`MntExe`/`MntTotal` = equivalente en pesos, sin IVA), `RUTDoc` 55555555-5 y `Extranjero(NumId, Nacionalidad)`; la nota 112 con `codRef` 1 informa `TpoDocRef`/`FolioDocRef`; los ajustes de tipo de cambio 500/501 del formato IECV no se generan. Set de certificación: ver `docs/certificacion/GUIA-CERTIFICACION.md` (solo JSON).
 
 ## Probar
 

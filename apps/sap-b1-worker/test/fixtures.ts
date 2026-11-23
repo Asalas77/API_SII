@@ -131,3 +131,43 @@ export const guiaConTraslado = (extra: Partial<DocumentoB1> = {}): DocumentoB1 =
     AddressExtension: { ShipToStreet: 'Los Leones', ShipToStreetNo: '99', ShipToCounty: 'Ñuñoa', ShipToCity: 'Santiago' },
     ...extra,
   });
+
+/** Socio extranjero: `LicTradNum` es su identificador tributario en el país de origen. */
+export const socioExtranjero = (extra: Record<string, unknown> = {}): SocioB1 => ({
+  CardCode: 'C30000',
+  CardName: 'ACME IMPORT INC',
+  LicTradNum: 'US-12-3456789',
+  EmailAddress: 'buyer@acme.example.com',
+  BPAddresses: [{ AddressName: 'HQ', AddressType: 'bo_BillTo', Street: '350 Fifth Avenue', City: 'New York', County: '' }],
+  ...extra,
+});
+
+/** Factura de exportación en USD (bienes) con los UDF de Aduana completos. */
+export const facturaExportacion = (extra: Partial<DocumentoB1> = {}): DocumentoB1 =>
+  base({
+    DocEntry: 400,
+    CardCode: 'C30000',
+    CardName: 'ACME IMPORT INC',
+    PayToCode: 'HQ',
+    U_SII_TipoDTE: '110',
+    DocCurrency: 'USD',
+    DocRate: 925.4567,
+    DocTotalFC: 7192.83,
+    DocumentLines: [
+      linea(0, { Quantity: 100, UnitPrice: 45.5, PriceAfterVAT: null, TaxCode: 'EXE', TaxPercentagePerRow: 0, Currency: 'USD', MeasureUnit: 'CJ' }),
+      linea(1, { Quantity: 50.5, UnitPrice: 52.3333, PriceAfterVAT: null, TaxCode: 'EXE', TaxPercentagePerRow: 0, Currency: 'USD', MeasureUnit: 'CJ' }),
+    ],
+    U_SII_ModVenta: '1',
+    U_SII_ClausulaVenta: '5',
+    U_SII_ViaTransp: '1',
+    U_SII_PtoEmbarque: '905',
+    U_SII_PtoDesemb: '134',
+    U_SII_PaisReceptor: '225',
+    U_SII_PaisDestino: '225',
+    U_SII_TotBultos: 151,
+    U_SII_TipoBulto: '10',
+    U_SII_FormaPagoExp: '11',
+    ...extra,
+  });
+
+export const baseExportacionConFolio = (): BaseInfo => ({ objType: 13, docEntry: 400, docDate: '2026-03-10', folio: 12, tipoDte: 110 });

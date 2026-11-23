@@ -4,6 +4,7 @@ import {
   type BaseInfo,
   type DocumentoB1,
   type EntidadB1,
+  esExportacion,
   type LineaB1,
   type SocioB1,
   type TipoDte,
@@ -18,10 +19,14 @@ export interface CuerpoDocumento {
     fechaVencimiento?: string;
     formaPago?: 1 | 2 | 3;
     indTraslado?: number;
+    /** Exportación de servicios: 3 a 6. */
+    indServicio?: number;
   };
   traslado?: CuerpoTraslado;
+  exportacion?: CuerpoExportacion;
   receptor?: {
-    rut: string;
+    /** Se omite en exportación (la API usa 55555555-5). */
+    rut?: string;
     razonSocial: string;
     giro?: string;
     direccion?: string;
@@ -56,6 +61,50 @@ export interface CuerpoDocumento {
   }>;
   origen?: Record<string, unknown>;
 }
+
+/** Bloque `exportacion` de la API (ver `ExportacionDte`); montos en la moneda del documento. */
+export interface CuerpoExportacion {
+  moneda: string;
+  tipoCambio: number;
+  formaPagoExportacion?: number;
+  extranjero: { numId?: string; nacionalidad: number };
+  aduana?: {
+    codigoModalidadVenta?: number;
+    codigoClausulaVenta?: number;
+    totalClausulaVenta?: number;
+    codigoViaTransporte?: number;
+    codigoPuertoEmbarque?: number;
+    codigoPuertoDesembarque?: number;
+    totalBultos?: number;
+    bultos?: Array<{ codigoTipo: number; cantidad: number }>;
+    codigoPaisReceptor?: number;
+    codigoPaisDestino?: number;
+  };
+}
+
+/**
+ * Código de moneda de B1 (ISO 4217) -> glosa de moneda del XSD del SII (`TipMonType`, tomada de SiiTypes_v10.xsd).
+ * Solo las equivalencias inequívocas; el resto se declara con `B1_MONEDAS_SII` (p. ej. `BRL=OTRAS MONEDAS`).
+ */
+export const MONEDAS_SII: Readonly<Record<string, string>> = {
+  USD: 'DOLAR USA',
+  EUR: 'EURO',
+  CAD: 'DOLAR CAN',
+  AUD: 'DOLAR AUST',
+  NZD: 'DOLAR NZ',
+  HKD: 'DOLAR HK',
+  SGD: 'DOLAR SIN',
+  GBP: 'LIBRA EST',
+  JPY: 'YEN',
+  ZAR: 'RAND',
+  MXN: 'PESO MEX',
+  COP: 'PESO COL',
+  UYU: 'PESO URUG',
+  BOB: 'BOLIVIANO',
+  PYG: 'GUARANI',
+  PEN: 'NUEVO SOL',
+  CNY: 'RENMINBI',
+};
 
 /** Bloque `traslado` de la API (Res. Ex. SII 144/2026; ver `TrasladoDto`). */
 export interface CuerpoTraslado {
@@ -117,8 +166,8 @@ export const MAX_LINEAS_DTE = 60;
 export const MAX_LINEAS_BOLETA = 1000;
 
 const TIPOS_POR_ENTIDAD: Record<EntidadB1['objType'], readonly TipoDte[]> = {
-  13: [33, 34, 39, 41, 56],
-  14: [61],
+  13: [33, 34, 39, 41, 56, 110, 111],
+  14: [61, 112],
   15: [52],
 };
 const TIPO_POR_OBJTYPE: Record<number, TipoDte> = { 13: 33, 14: 61, 15: 52 };
@@ -188,6 +237,7 @@ export function mapearDocumento(entidad: EntidadB1, doc: DocumentoB1, ctx: Conte
   if ('error' in t) return { ok: false, errores: [t.error] };
   const tipo = t.tipo;
   const boleta = esBoleta(tipo);
+  const exportacion = esExportacion(tipo);
 
   // Fechas
   const fechaEmision = fecha(doc.DocDate);
@@ -214,6 +264,10 @@ export function mapearDocumento(entidad: EntidadB1, doc: DocumentoB1, ctx: Conte
     const cantidad = Number(l.Quantity);
     if (!(cantidad > 0)) {
       errores.push(`${ref}: la cantidad debe ser mayor que 0`);
+      continue;
+    }
+    if (exportacion && l.Currency && doc.DocCurrency && l.Currency.trim() !== doc.DocCurrency.trim()) {
+      errores.push(`${ref}: la moneda de la línea (${l.Currency}) debe ser la del documento (${doc.DocCurrency})`);
       continue;
     }
     const exenta = esExenta(l);
@@ -250,7 +304,7 @@ export function mapearDocumento(entidad: EntidadB1, doc: DocumentoB1, ctx: Conte
     if (unidad) d.unidad = unidad;
     const desc = l.DiscountPercent ?? 0;
     if (desc > 0) d.descuentoPorcentaje = Math.min(desc, 100);
-    if (exenta || tipo === 34 || tipo === 41) d.exento = true;
+    if (!exportacion && (exenta || tipo === 34 || tipo === 41)) d.exento = true;
     detalle.push(d);
   }
 
@@ -259,8 +313,25 @@ export function mapearDocumento(entidad: EntidadB1, doc: DocumentoB1, ctx: Conte
   const socio = ctx.socio;
   const rutCrudo = (socio?.LicTradNum ?? '').trim();
   const rutNorm = normalizarRut(rutCrudo);
+  let extranjero: { numId?: string } | undefined;
   if (!socio) {
     errores.push(`No se pudo leer el socio de negocios ${doc.CardCode}`);
+  } else if (exportacion) {
+    // Receptor extranjero: la API usa el RUT 55555555-5; LicTradNum es su identificador tributario en el país de origen.
+    const razon = trunc(doc.CardName ?? socio.CardName, 100);
+    if (!razon) errores.push(`El socio ${doc.CardCode} no tiene nombre (CardName)`);
+    receptor = { razonSocial: razon };
+    const giro = socio[ctx.config.campoGiro];
+    if (typeof giro === 'string' && trunc(giro, 40)) receptor.giro = trunc(giro, 40);
+    const dir = direccionDe(socio, doc);
+    if (dir.direccion) receptor.direccion = dir.direccion;
+    else if (tipo === 110) errores.push(`El socio ${doc.CardCode} no tiene dirección en el extranjero (BPAddresses: Street)`);
+    if (dir.comuna) receptor.comuna = dir.comuna;
+    if (dir.ciudad) receptor.ciudad = dir.ciudad;
+    const correo = trunc(socio.EmailAddress, 80);
+    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correo)) receptor.correo = correo;
+    const numId = trunc(rutCrudo, 20);
+    if (numId) extranjero = { numId };
   } else if (boleta && (!rutCrudo || rutNorm === RUT_GENERICO)) {
     receptor = undefined; // consumidor final: la API usa 66666666-6
   } else if (!rutCrudo) {
@@ -320,19 +391,31 @@ export function mapearDocumento(entidad: EntidadB1, doc: DocumentoB1, ctx: Conte
   if (descGlobal > 0) {
     const valor = Math.min(descGlobal, 100);
     descuentosRecargos = [];
-    if (hayAfecta && tipo !== 34 && tipo !== 41) {
+    if (exportacion) {
+      descuentosRecargos.push({ tipo: 'D', glosa: 'Descuento', tipoValor: '%', valor });
+    } else if (hayAfecta && tipo !== 34 && tipo !== 41) {
       descuentosRecargos.push({ tipo: 'D', glosa: 'Descuento', tipoValor: '%', valor });
     }
-    if (hayExenta || tipo === 34 || tipo === 41) {
+    if (!exportacion && (hayExenta || tipo === 34 || tipo === 41)) {
       descuentosRecargos.push({ tipo: 'D', glosa: 'Descuento', tipoValor: '%', valor, exento: true });
     }
   }
 
   // Referencias (notas de crédito y débito)
   let referencias: CuerpoDocumento['referencias'];
-  if (tipo === 61 || tipo === 56) {
+  if (tipo === 61 || tipo === 56 || tipo === 111 || tipo === 112) {
     const r = referenciasDe(doc, ctx.bases, errores);
     referencias = r;
+  }
+
+  let bloqueExportacion: CuerpoExportacion | undefined;
+  if (exportacion) {
+    bloqueExportacion = mapearExportacion(doc, tipo, ctx.config, extranjero, detalle, descuentosRecargos, errores, advertencias);
+    const ind = (doc.U_SII_IndServicio ?? '').trim();
+    if (ind) {
+      if (['3', '4', '5', '6'].includes(ind)) idDoc.indServicio = Number(ind);
+      else errores.push(`U_SII_IndServicio "${ind}" inválido (3 a 6, solo exportación de servicios; vacío para bienes)`);
+    }
   }
 
   const origen: Record<string, unknown> = {
@@ -349,10 +432,128 @@ export function mapearDocumento(entidad: EntidadB1, doc: DocumentoB1, ctx: Conte
 
   const cuerpo: CuerpoDocumento = { idDoc, detalle, origen };
   if (traslado) cuerpo.traslado = traslado;
+  if (bloqueExportacion) cuerpo.exportacion = bloqueExportacion;
   if (receptor) cuerpo.receptor = receptor;
   if (descuentosRecargos?.length) cuerpo.descuentosRecargos = descuentosRecargos;
   if (referencias?.length) cuerpo.referencias = referencias;
   return { ok: true, cuerpo, tipoDte: tipo, advertencias };
+}
+
+/** Código numérico de Aduana de un UDF (entero positivo); `undefined` si está vacío y error si no es un entero. */
+function codigoUdf(v: string | number | null | undefined, udf: string, errores: string[]): number | undefined {
+  const t = String(v ?? '').trim();
+  if (!t) return undefined;
+  if (!/^\d{1,4}$/.test(t) || Number(t) <= 0) {
+    errores.push(`${udf} "${t}" debe ser un código numérico de la tabla de Aduana correspondiente`);
+    return undefined;
+  }
+  return Number(t);
+}
+
+/**
+ * Bloque `exportacion` (110-112) desde `DocCurrency`/`DocRate` y los UDF de Aduana. Los códigos se validan contra las
+ * tablas de Aduana en la API; aquí solo el formato y la presencia de lo que la factura de exportación exige (formato
+ * DTE v2.5): país del receptor, y para bienes modalidad, cláusula, vía, puertos, país de destino y total de bultos.
+ * Supuestos B1: `DocCurrency` es el código de moneda, `DocRate` los pesos por unidad, `UnitPrice` está en la moneda
+ * del documento y `DocTotalFC` es el total en esa moneda.
+ */
+function mapearExportacion(
+  doc: DocumentoB1,
+  tipo: TipoDte,
+  config: Config['b1'],
+  extranjero: { numId?: string } | undefined,
+  detalle: CuerpoDocumento['detalle'],
+  descuentos: CuerpoDocumento['descuentosRecargos'],
+  errores: string[],
+  advertencias: string[],
+): CuerpoExportacion | undefined {
+  const erroresAntes = errores.length;
+  const codigoB1 = (doc.DocCurrency ?? '').trim().toUpperCase();
+  const locales = new Set([(config.monedaLocal ?? 'CLP').toUpperCase(), '$', 'CLP']);
+  let moneda = '';
+  if (!codigoB1) errores.push('Exportación: DocCurrency (moneda del documento) es obligatoria');
+  else if (locales.has(codigoB1)) errores.push(`Exportación: el documento debe emitirse en moneda extranjera (DocCurrency es ${codigoB1})`);
+  else {
+    const glosa = config.monedasSii?.[codigoB1] ?? MONEDAS_SII[codigoB1];
+    if (glosa) moneda = glosa;
+    else errores.push(`Exportación: la moneda ${codigoB1} no tiene glosa del SII; declárela en B1_MONEDAS_SII (p. ej. ${codigoB1}=OTRAS MONEDAS)`);
+  }
+  const tipoCambio = Number(doc.DocRate);
+  if (!(tipoCambio >= 0.0001 && tipoCambio <= 999_999.9999)) errores.push(`Exportación: DocRate (tipo de cambio en pesos) inválido ("${String(doc.DocRate)}")`);
+
+  const nacionalidad = codigoUdf(doc.U_SII_PaisReceptor, 'U_SII_PaisReceptor', errores);
+  const mod = codigoUdf(doc.U_SII_ModVenta, 'U_SII_ModVenta', errores);
+  const clausula = codigoUdf(doc.U_SII_ClausulaVenta, 'U_SII_ClausulaVenta', errores);
+  const via = codigoUdf(doc.U_SII_ViaTransp, 'U_SII_ViaTransp', errores);
+  const embarque = codigoUdf(doc.U_SII_PtoEmbarque, 'U_SII_PtoEmbarque', errores);
+  const desembarque = codigoUdf(doc.U_SII_PtoDesemb, 'U_SII_PtoDesemb', errores);
+  const destino = codigoUdf(doc.U_SII_PaisDestino, 'U_SII_PaisDestino', errores);
+  const tipoBulto = codigoUdf(doc.U_SII_TipoBulto, 'U_SII_TipoBulto', errores);
+  const formaPago = codigoUdf(doc.U_SII_FormaPagoExp, 'U_SII_FormaPagoExp', errores);
+  const bultosCrudo = String(doc.U_SII_TotBultos ?? '').trim();
+  const bultos = bultosCrudo ? Number(bultosCrudo) : undefined;
+  if (bultos !== undefined && (!Number.isInteger(bultos) || bultos <= 0)) errores.push(`U_SII_TotBultos "${bultosCrudo}" debe ser un entero positivo`);
+  let totalClausula: number | undefined;
+  const totCrudo = (doc.U_SII_TotClausula ?? '').trim().replace(',', '.');
+  if (totCrudo) {
+    totalClausula = Number(totCrudo);
+    if (!(totalClausula > 0)) errores.push(`U_SII_TotClausula "${totCrudo}" debe ser un monto mayor que cero`);
+  } else if (typeof doc.DocTotalFC === 'number' && doc.DocTotalFC > 0) {
+    totalClausula = redondear(doc.DocTotalFC, 2);
+  }
+
+  const servicio = (doc.U_SII_IndServicio ?? '').trim();
+  const sinClausula = ['3', '4', '5'].includes(servicio);
+  if (tipo === 110) {
+    const falta = (v: unknown, udf: string, descripcion: string): void => {
+      if (v === undefined) errores.push(`Factura de exportación: ${udf} es obligatorio (${descripcion})`);
+    };
+    falta(nacionalidad, 'U_SII_PaisReceptor', 'código de país del receptor, tabla de países de Aduana');
+    if (!sinClausula) {
+      falta(mod, 'U_SII_ModVenta', 'modalidad de venta de Aduana');
+      falta(clausula, 'U_SII_ClausulaVenta', 'cláusula de compraventa de Aduana');
+    }
+    if (servicio !== '4') falta(via, 'U_SII_ViaTransp', 'vía de transporte de Aduana');
+    if (!servicio) {
+      falta(embarque, 'U_SII_PtoEmbarque', 'puerto de embarque de Aduana');
+      falta(desembarque, 'U_SII_PtoDesemb', 'puerto de desembarque de Aduana');
+      falta(destino, 'U_SII_PaisDestino', 'código de país de destino');
+      falta(bultos, 'U_SII_TotBultos', 'total de bultos');
+    }
+  } else if (nacionalidad === undefined) {
+    errores.push(`Nota de exportación: U_SII_PaisReceptor es obligatorio (nacionalidad del receptor extranjero)`);
+  }
+
+  // Contraste informativo con el total de B1 en la moneda del documento (B1 redondea a 2 decimales).
+  if (typeof doc.DocTotalFC === 'number' && doc.DocTotalFC > 0) {
+    const bruto = detalle.reduce((s, d) => s + d.cantidad * d.precioUnitario * (1 - (d.descuentoPorcentaje ?? 0) / 100), 0);
+    const global = descuentos?.reduce((s, d) => s + d.valor, 0) ?? 0;
+    const calculado = bruto * (1 - global / 100);
+    if (Math.abs(calculado - doc.DocTotalFC) > 0.05) {
+      advertencias.push(`El total calculado (${redondear(calculado, 4)}) difiere de DocTotalFC (${doc.DocTotalFC}): la API emite con los precios y cantidades de las líneas`);
+    }
+  }
+
+  if (errores.length > erroresAntes) return undefined;
+  const aduana: NonNullable<CuerpoExportacion['aduana']> = {
+    ...(mod !== undefined ? { codigoModalidadVenta: mod } : {}),
+    ...(clausula !== undefined ? { codigoClausulaVenta: clausula } : {}),
+    ...(totalClausula !== undefined && !sinClausula && clausula !== undefined ? { totalClausulaVenta: totalClausula } : {}),
+    ...(via !== undefined ? { codigoViaTransporte: via } : {}),
+    ...(embarque !== undefined ? { codigoPuertoEmbarque: embarque } : {}),
+    ...(desembarque !== undefined ? { codigoPuertoDesembarque: desembarque } : {}),
+    ...(bultos !== undefined ? { totalBultos: bultos } : {}),
+    ...(bultos !== undefined && tipoBulto !== undefined ? { bultos: [{ codigoTipo: tipoBulto, cantidad: bultos }] } : {}),
+    ...(nacionalidad !== undefined ? { codigoPaisReceptor: nacionalidad } : {}),
+    ...(destino !== undefined ? { codigoPaisDestino: destino } : {}),
+  };
+  return {
+    moneda,
+    tipoCambio,
+    ...(formaPago !== undefined ? { formaPagoExportacion: formaPago } : {}),
+    extranjero: { ...(extranjero?.numId ? { numId: extranjero.numId } : {}), nacionalidad: nacionalidad as number },
+    ...(Object.keys(aduana).length > 0 ? { aduana } : {}),
+  };
 }
 
 /** Valor de un UDF de texto: vacío, "DIFERIDO" o "SIN DATO" (cualquier caso) o el dato. */

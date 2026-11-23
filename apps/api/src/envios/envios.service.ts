@@ -50,7 +50,7 @@ export interface EnvioRespuesta {
 }
 
 const TIPOS_BOLETA = [39, 41];
-const TIPOS_DTE_ENVIO = [33, 34, 52, 56, 61];
+const TIPOS_DTE_ENVIO = [33, 34, 52, 56, 61, 110, 111, 112];
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function estadoInvalido(detail: string) {
@@ -252,7 +252,7 @@ export class EnviosService {
       422,
       'DOCUMENTO_INVALIDO',
       'Tipos incompatibles',
-      'Las boletas (39/41) y los demás DTE (33/34/52/56/61) viajan en sobres distintos: envíelos por separado',
+      'Las boletas (39/41) y los demás DTE (33/34/52/56/61 y exportación 110/111/112) viajan en sobres distintos: envíelos por separado',
     );
   }
 

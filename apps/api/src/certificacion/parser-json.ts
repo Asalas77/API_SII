@@ -1,4 +1,5 @@
 import Joi from 'joi';
+import { exportacionSchema } from '../documentos/documentos.dto.js';
 import { type CasoSet, ErrorSetPruebas, type SetPruebas } from './tipos.js';
 
 /**
@@ -17,6 +18,20 @@ import { type CasoSet, ErrorSetPruebas, type SetPruebas } from './tipos.js';
  *   ]
  * }
  * ```
+ *
+ * Set de exportación (110/111/112): agregue `exportacion` (mismo bloque que la API de emisión: `moneda`, `tipoCambio`,
+ * `extranjero`, `aduana`, ...), `receptorExtranjero` y, si es un servicio, `indServicio` (3 a 6). Los precios de
+ * `items` van en la moneda de la operación y las notas referencian el caso de la factura con `referencias[].caso`:
+ *
+ * ```json
+ * { "id": "4321-9", "tipoDte": 110,
+ *   "receptorExtranjero": { "razonSocial": "ACME IMPORT INC", "direccion": "350 Fifth Avenue, New York" },
+ *   "exportacion": { "moneda": "DOLAR USA", "tipoCambio": 925.45, "extranjero": { "nacionalidad": 225 },
+ *                    "aduana": { "codigoModalidadVenta": 1, "codigoClausulaVenta": 5, "totalClausulaVenta": 4550,
+ *                                "codigoViaTransporte": 1, "codigoPuertoEmbarque": 905, "codigoPuertoDesembarque": 134,
+ *                                "totalBultos": 100, "codigoPaisReceptor": 225, "codigoPaisDestino": 225 } },
+ *   "items": [{ "nombre": "Vino Cabernet Sauvignon", "cantidad": 100, "precioUnitario": 45.5 }] }
+ * ```
  */
 const esquema = Joi.object({
   numeroAtencion: Joi.alternatives().try(Joi.string(), Joi.number()),
@@ -26,7 +41,7 @@ const esquema = Joi.object({
         id: Joi.string()
           .pattern(/^\d+-\d+$/)
           .required(),
-        tipoDte: Joi.number().valid(33, 34, 39, 41, 52, 56, 61).required(),
+        tipoDte: Joi.number().valid(33, 34, 39, 41, 52, 56, 61, 110, 111, 112).required(),
         items: Joi.array()
           .items(
             Joi.object({
@@ -53,6 +68,9 @@ const esquema = Joi.object({
           )
           .default([]),
         indTraslado: Joi.number().integer().min(1).max(9),
+        exportacion: exportacionSchema,
+        receptorExtranjero: Joi.object({ razonSocial: Joi.string().required(), direccion: Joi.string().required(), giro: Joi.string() }),
+        indServicio: Joi.number().valid(3, 4, 5, 6),
       }),
     )
     .min(1)

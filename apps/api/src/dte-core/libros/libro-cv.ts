@@ -87,6 +87,11 @@ export interface DetalleLibroCV {
   /** Receptor (ventas) o proveedor (compras). */
   rutContraparte?: string;
   razonSocial?: string;
+  /**
+   * Receptor extranjero (exportación 110/111/112): `NumId` (hasta 20) y `Nacionalidad` (código de país de Aduana,
+   * hasta 3 caracteres). Va entre `RznSoc` y `TpoDocRef`.
+   */
+  extranjero?: { numId?: string; nacionalidad?: string };
   tipoDocRef?: number;
   folioDocRef?: number;
 
@@ -542,6 +547,16 @@ function xmlTotales(
   );
 }
 
+function xmlExtranjero(e: DetalleLibroCV['extranjero']): string {
+  if (!e || (!e.numId && !e.nacionalidad)) return '';
+  return (
+    '<Extranjero>' +
+    (e.numId ? tag('NumId', textoLibro(e.numId, 20)) : '') +
+    (e.nacionalidad ? tag('Nacionalidad', textoLibro(e.nacionalidad, 3)) : '') +
+    '</Extranjero>'
+  );
+}
+
 function xmlDetalle(f: Fila): string {
   const d = f.d;
   const cabecera =
@@ -566,6 +581,7 @@ function xmlDetalle(f: Fila): string {
     tagOpc('CdgSIISucur', d.codigoSucursal) +
     tag('RUTDoc', rutLibro(d.rutContraparte as string, 'rutContraparte')) +
     (d.razonSocial ? tag('RznSoc', textoLibro(d.razonSocial, 50)) : '') +
+    xmlExtranjero(d.extranjero) +
     tagOpc('TpoDocRef', d.tipoDocRef) +
     tagOpc('FolioDocRef', d.folioDocRef) +
     m('MntExe', f.exento) +
