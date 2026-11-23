@@ -220,3 +220,107 @@ describe('mapeador B1 -> DTE', () => {
     expect(sinGiro.advertencias.join(' ')).toMatch(/giro/);
   });
 });
+
+describe('guía de despacho: traslado Res. Ex. SII 144/2026', () => {
+  const entrega = {
+    ShipToStreet: 'Los Leones',
+    ShipToStreetNo: '99',
+    ShipToCounty: 'Ñuñoa',
+    ShipToCity: 'Santiago',
+  };
+  const completa = (extra: Record<string, unknown> = {}) =>
+    guia({
+      U_SII_CatTraslado: 'AUTOGESTIONADO',
+      U_SII_DirOrigen: 'Bodega Central 100',
+      U_SII_CmnaOrigen: 'Quilicura',
+      U_SII_RutTrans: '76.543.210-3',
+      U_SII_RutChofer: '11.222.333-9',
+      U_SII_NomChofer: 'Juan Pérez Soto',
+      U_SII_Patente: 'BCDF12',
+      U_SII_PatenteCarro: 'AB1234',
+      U_SII_FchSalida: '2026-11-23T00:00:00',
+      U_SII_HraSalida: '09:30',
+      U_SII_FchLlegada: '2026-11-23',
+      AddressExtension: entrega,
+      ...extra,
+    });
+
+  it('sin U_SII_CatTraslado no hay bloque traslado y avisa (U_SII_Transporte obsoleto)', () => {
+    const r = ok(mapearDocumento(ODLN, guia(), ctx()));
+    expect(r.cuerpo.traslado).toBeUndefined();
+    expect(r.advertencias.join(' ')).toMatch(/Res\. Ex\. SII 144.*obsoleto/);
+  });
+
+  it('autogestionada: mapea los UDF estructurados y el destino desde la dirección de entrega', () => {
+    const r = ok(mapearDocumento(ODLN, completa(), ctx()));
+    expect(r.cuerpo.traslado).toEqual({
+      categoria: 'autogestionado',
+      origen: { direccion: 'Bodega Central 100', comuna: 'Quilicura' },
+      destino: { direccion: 'Los Leones 99', comuna: 'Ñuñoa', ciudad: 'Santiago' },
+      transportista: { rut: '76543210-3' },
+      chofer: { rut: '11222333-9', nombre: 'Juan Pérez Soto' },
+      patente: 'BCDF12',
+      patenteCarro: 'AB1234',
+      fechaSalida: '2026-11-23',
+      horaSalida: '09:30',
+      fechaLlegada: '2026-11-23',
+    });
+    expect(r.cuerpo.idDoc.indTraslado).toBe(1);
+  });
+
+  it('autogestionada incompleta: errores con el UDF exacto', () => {
+    const e = errores(
+      mapearDocumento(ODLN, completa({ U_SII_Patente: null, U_SII_RutChofer: '', U_SII_FchSalida: null, AddressExtension: null }), ctx()),
+    ).join(' | ');
+    expect(e).toMatch(/U_SII_Patente es obligatorio/);
+    expect(e).toMatch(/U_SII_RutChofer es obligatorio/);
+    expect(e).toMatch(/U_SII_FchSalida es obligatorio/);
+    expect(e).toMatch(/dirección de entrega/);
+  });
+
+  it('valida formatos: RUT con DV, nombre de 30, origen en par', () => {
+    const e = errores(
+      mapearDocumento(ODLN, completa({ U_SII_RutTrans: '76543210-0', U_SII_NomChofer: 'X'.repeat(31), U_SII_CmnaOrigen: '' }), ctx()),
+    ).join(' | ');
+    expect(e).toMatch(/U_SII_RutTrans inválido/);
+    expect(e).toMatch(/U_SII_NomChofer admite hasta 30/);
+    expect(e).toMatch(/U_SII_DirOrigen y U_SII_CmnaOrigen/);
+  });
+
+  it('tercerizada: lo vacío se informa diferido y "SIN DATO" se respeta', () => {
+    const r = ok(
+      mapearDocumento(
+        ODLN,
+        completa({ U_SII_CatTraslado: 'tercerizado', U_SII_RutTrans: '', U_SII_RutChofer: '', U_SII_NomChofer: 'Sin dato', U_SII_Patente: '', U_SII_FchSalida: null, U_SII_HraSalida: null }),
+        ctx(),
+      ),
+    );
+    expect(r.cuerpo.traslado?.diferido).toEqual(['transportista', 'choferRut', 'patente', 'fechaSalida']);
+    expect(r.cuerpo.traslado?.sinDato).toEqual(['choferNombre']);
+    expect(r.cuerpo.traslado?.chofer).toBeUndefined();
+    expect(r.cuerpo.traslado?.patenteCarro).toBe('AB1234');
+  });
+
+  it('régimen especial: basta con lo mínimo y no exige destino', () => {
+    const r = ok(
+      mapearDocumento(
+        ODLN,
+        guia({ U_SII_CatTraslado: 'REGIMEN_ESPECIAL', U_SII_IndTraslado: '6', DocumentLines: [linea(0, { Quantity: 1, UnitPrice: 0 })], Comments: 'Guía habilitante SAG' }),
+        ctx(),
+      ),
+    );
+    expect(r.cuerpo.traslado).toEqual({ categoria: 'regimen_especial', motivoSinPrecio: 'Guía habilitante SAG' });
+  });
+
+  it('categoría inválida, IndTraslado 10 (GDT) y 11/12 sin llegada ni descripción', () => {
+    expect(errores(mapearDocumento(ODLN, completa({ U_SII_CatTraslado: 'OTRA' }), ctx())).join(' ')).toMatch(/U_SII_CatTraslado "OTRA"/);
+    expect(errores(mapearDocumento(ODLN, completa({ U_SII_IndTraslado: '10' }), ctx())).join(' ')).toMatch(/GDT/);
+    const e = errores(mapearDocumento(ODLN, completa({ U_SII_IndTraslado: '11', U_SII_FchLlegada: null, Comments: null }), ctx())).join(' | ');
+    expect(e).toMatch(/U_SII_FchLlegada/);
+    expect(e).toMatch(/Comments/);
+    const ok11 = ok(mapearDocumento(ODLN, completa({ U_SII_IndTraslado: '11', Comments: 'Distancia Arica-Santiago' }), ctx()));
+    expect(ok11.cuerpo.idDoc.indTraslado).toBe(11);
+    expect(ok11.cuerpo.traslado?.descripcionProlongado).toBe('Distancia Arica-Santiago');
+    expect(errores(mapearDocumento(ODLN, completa({ U_SII_IndTraslado: '13' }), ctx())).join(' ')).toMatch(/1 a 12/);
+  });
+});

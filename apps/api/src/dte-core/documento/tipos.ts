@@ -1,3 +1,5 @@
+import type { IndTraslado, TrasladoDte } from './traslado.js';
+
 /** Tipos de documento soportados por los constructores. */
 export type TipoDte = 33 | 34 | 39 | 41 | 52 | 56 | 61;
 
@@ -32,8 +34,12 @@ export interface IdDocDte {
   fechaVencimiento?: string;
   /** 1 contado, 2 crédito, 3 sin costo (entrega gratuita). No aplica a boletas. */
   formaPago?: 1 | 2 | 3;
-  /** Solo guías (52): 1 operación constituye venta ... 9 otros traslados. */
-  indTraslado?: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
+  /**
+   * Solo guías (52): tipo de traslado, 1 operación constituye venta ... 12 traslado prolongado no venta
+   * (ver `DESCRIPCION_IND_TRASLADO`). 10, 11 y 12 (Res. Ex. SII 144/2026) aún no están en el XSD oficial:
+   * se rechazan salvo que se habiliten con `permitirIndTrasladoRes144`.
+   */
+  indTraslado?: IndTraslado;
   /**
    * Boletas: 1 servicios periódicos, 2 servicios periódicos domiciliarios, 3 ventas y servicios
    * (por defecto), 4 espectáculos por cuenta de terceros. En facturas el XSD admite 1 a 3.
@@ -81,8 +87,13 @@ export interface DetalleDte {
   descripcion?: string;
   /** Código del ítem; un string se informa como tipo `INT1`. */
   codigoItem?: string | { tipo: string; valor: string };
-  cantidad: number;
+  /** Obligatoria, salvo en la guía de despacho tercerizada (`indTraslado` 10) que referencia el detalle original. */
+  cantidad?: number;
   unidad?: string;
+  /** Peso del ítem (Res. 144 N°1.4). El formato DTE no tiene campo por ítem: se informa en `DscItem`. */
+  peso?: { valor: number; unidad: string };
+  /** Volumen del ítem; igual que `peso`, se informa en `DscItem`. */
+  volumen?: { valor: number; unidad: string };
   /** Neto en facturas/notas/guías; con IVA incluido en boletas. */
   precioUnitario: number;
   descuentoPorcentaje?: number;
@@ -106,6 +117,11 @@ export interface ReferenciaDte {
   /** Tipo de documento referenciado (`33`, `61`, `801`, `SET`, ...). Máx. 3 caracteres. */
   tipoDocRef: string;
   folioRef: string | number;
+  /**
+   * RUT del emisor del documento referido (`RUTOtr`). Solo si el documento es tributario y lo emitió
+   * otro contribuyente (distinto del emisor de este documento). Obligatorio en la práctica para la GDT.
+   */
+  rutOtroContribuyente?: string;
   /** `yyyy-mm-dd`. No se informa en boletas (el XSD de boleta no tiene `FchRef`). */
   fechaRef: string;
   /** 1 anula documento, 2 corrige texto, 3 corrige montos. */
@@ -144,6 +160,8 @@ export interface DocumentoDte {
   descuentosRecargos?: DescuentoRecargoGlobal[];
   referencias?: ReferenciaDte[];
   impuestosAdicionales?: ImpuestoAdicionalDte[];
+  /** Datos del traslado (Res. Ex. SII 144/2026): guías (52) y facturas (33/34) que amparan traslado. */
+  traslado?: TrasladoDte;
   /**
    * Proveedor de software. Solo boletas (39/41): se emite `RUTProvSW` en `Encabezado`, entre `Receptor`
    * y `Totales` (posición del XSD). En los demás tipos se ignora (`DTE_v10.xsd` no lo define).

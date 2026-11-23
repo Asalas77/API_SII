@@ -10,6 +10,7 @@ export * from './certificado/certificado.js';
 export * from './documento/errores.js';
 export * from './documento/tipos.js';
 export * from './documento/totales.js';
+export * from './documento/traslado.js';
 export * from './documento/construir-dte.js';
 export * from './envio/envio.js';
 export * from './libros/comun.js';

@@ -43,6 +43,14 @@ namespace SapB1Addon.Core.Modelos
         /// <summary>Descuento de cabecera (%).</summary>
         public decimal? DiscountPercent { get; set; }
         public int? AttachmentEntry { get; set; }
+        public string? Comments { get; set; }
+        /// <summary>Dirección de entrega en texto libre (<c>Address2</c>).</summary>
+        public string? Address2 { get; set; }
+        /// <summary>Dirección de entrega estructurada (<c>AddressExtension.ShipTo*</c>; <c>ShipToCounty</c> = comuna, supuesto).</summary>
+        public string? EntregaCalle { get; set; }
+        public string? EntregaNumero { get; set; }
+        public string? EntregaComuna { get; set; }
+        public string? EntregaCiudad { get; set; }
         public List<LineaDocumento> Lines { get; set; } = new List<LineaDocumento>();
 
         // UDF (mismos nombres que el worker; ver clase Udf).
@@ -56,7 +64,21 @@ namespace SapB1Addon.Core.Modelos
         public string? SiiPdfUrl { get; set; }
         public string? SiiIdemKey { get; set; }
         public string? SiiIndTraslado { get; set; }
+        /// <summary>OBSOLETO: texto libre; se conserva como metadato en <c>origen.transporte</c>.</summary>
         public string? SiiTransporte { get; set; }
+        /// <summary>AUTOGESTIONADO | TERCERIZADO | REGIMEN_ESPECIAL (Res. Ex. SII 144/2026).</summary>
+        public string? SiiCatTraslado { get; set; }
+        public string? SiiDirOrigen { get; set; }
+        public string? SiiCmnaOrigen { get; set; }
+        public string? SiiRutTrans { get; set; }
+        public string? SiiRutChofer { get; set; }
+        public string? SiiNomChofer { get; set; }
+        public string? SiiPatente { get; set; }
+        public string? SiiPatenteCarro { get; set; }
+        public DateTime? SiiFchSalida { get; set; }
+        /// <summary>HH:MM o HH:MM:SS.</summary>
+        public string? SiiHraSalida { get; set; }
+        public DateTime? SiiFchLlegada { get; set; }
         public string? SiiCodRef { get; set; }
         public string? SiiRazonRef { get; set; }
         public string? SiiTipoDocRef { get; set; }

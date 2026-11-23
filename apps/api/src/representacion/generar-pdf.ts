@@ -1,5 +1,6 @@
 import PDFDocument from 'pdfkit';
-import { extraerDatosImpresion, type DatosImpresion, type TipoImpresion } from './datos-impresion.js';
+import { DESCRIPCION_IND_TRASLADO } from '../dte-core/documento/traslado.js';
+import { extraerDatosImpresion, type DatosImpresion, type TipoImpresion, type TrasladoImpresion } from './datos-impresion.js';
 import { dimensionesPng, generarPdf417, PX_POR_MODULO, XDIM_PT } from './timbre-pdf417.js';
 
 export interface OpcionesPdf {
@@ -32,7 +33,7 @@ export const TEXTO_ACUSE_RECIBO =
  */
 export function admiteCedible(tipo: TipoImpresion, indTraslado?: number): boolean {
   if (tipo === 33 || tipo === 34) return true;
-  if (tipo === 52) return indTraslado === undefined || [1, 2, 3, 9].includes(indTraslado);
+  if (tipo === 52) return indTraslado === undefined || [1, 2, 3, 9, 11].includes(indTraslado);
   return false;
 }
 
@@ -68,17 +69,32 @@ function fechaCorta(iso: string): string {
 }
 
 const FORMAS_PAGO: Record<number, string> = { 1: 'Contado', 2: 'Crédito', 3: 'Sin costo (entrega gratuita)' };
-const TRASLADOS: Record<number, string> = {
-  1: 'Operación constituye venta',
-  2: 'Ventas por efectuar',
-  3: 'Consignaciones',
-  4: 'Entrega gratuita',
-  5: 'Traslados internos',
-  6: 'Otros traslados no venta',
-  7: 'Guía de devolución',
-  8: 'Traslado para exportación (no venta)',
-  9: 'Venta para exportación',
-};
+/** Descripción de cada `IndTraslado` (1 a 12, Anexo de la Res. Ex. SII 144/2026). */
+const TRASLADOS: Readonly<Record<number, string>> = DESCRIPCION_IND_TRASLADO;
+
+/**
+ * Filas "etiqueta / valor" de la sección "Datos del traslado". Los datos que se informaron como "Diferido" o
+ * "Sin Dato" se imprimen como `DIFERIDO` / `SIN DATO`; los que no se informaron no aparecen.
+ */
+export function filasTraslado(d: DatosImpresion): [string, string][] {
+  const t: TrasladoImpresion | undefined = d.traslado;
+  if (!t) return [];
+  const m = t.marcadores;
+  const marca = (c: keyof TrasladoImpresion['marcadores']): string | undefined => (m[c] ? m[c]!.toUpperCase() : undefined);
+  const filas: [string, string | undefined][] = [
+    ['Tipo de traslado:', d.indTraslado !== undefined && TRASLADOS[d.indTraslado] ? `${d.indTraslado} - ${TRASLADOS[d.indTraslado]}` : undefined],
+    ['Origen:', t.origen],
+    ['Destino:', t.destino],
+    ['Chofer:', t.choferNombre ?? marca('choferNombre')],
+    ['RUT chofer:', t.choferRut ?? marca('choferRut')],
+    ['RUT transportista:', t.rutTransportista ?? marca('transportista')],
+    ['Patente:', t.patente ?? marca('patente')],
+    ['Patente carro:', t.patenteCarro ?? marca('patenteCarro')],
+    ['Fecha salida:', t.fechaSalida ? `${fechaCorta(t.fechaSalida)}${t.horaSalida ? ' ' + t.horaSalida : ''}` : marca('fechaSalida')],
+    ['Fecha llegada:', t.fechaLlegada ? fechaCorta(t.fechaLlegada) : undefined],
+  ];
+  return filas.filter((f): f is [string, string] => f[1] !== undefined && f[1] !== '');
+}
 const CODIGOS_REF: Record<number, string> = { 1: 'Anula documento', 2: 'Corrige texto', 3: 'Corrige montos' };
 
 function lineaComuna(p: { comuna?: string; ciudad?: string }): string {
@@ -257,6 +273,23 @@ function renderCarta(doc: Doc, d: DatosImpresion, o: OpcionesPdf, timbre: Timbre
   pintar(filasRec, M + 6, wColIzq, 62);
   pintar(filasDer, M + wColIzq + 6, wColDer, 82);
   y += hRec + 10;
+
+  // --- datos del traslado (Res. Ex. SII 144/2026) ---
+  const filasTr = filasTraslado(d);
+  if (filasTr.length > 0) {
+    const mitad = Math.ceil(filasTr.length / 2);
+    const colA = filasTr.slice(0, mitad);
+    const colB = filasTr.slice(mitad);
+    const wCol = (ancho - 12) / 2;
+    const hTr = Math.max(medir(colA, wCol, 92), medir(colB, wCol, 92)) + 22;
+    doc.lineWidth(0.6).strokeColor(GRIS).rect(M, y, ancho, hTr).stroke();
+    doc.fillColor('black').font('Helvetica-Bold').fontSize(9).text('Datos del traslado', M + 6, y + 4, { width: ancho - 12, lineBreak: false });
+    const y0 = y;
+    y += 14;
+    pintar(colA, M + 6, wCol, 92);
+    pintar(colB, M + 6 + wCol, wCol, 92);
+    y = y0 + hTr + 10;
+  }
 
   // --- detalle ---
   const cols = [
@@ -448,6 +481,11 @@ function renderTermica(doc: Doc, d: DatosImpresion, o: OpcionesPdf, timbre: Timb
     y = doc.y;
   };
   izq(`Fecha emisión: ${fechaCorta(d.fechaEmision)}`);
+  const filasTr = filasTraslado(d);
+  if (filasTr.length > 0) {
+    izq('Datos del traslado', true, 8);
+    for (const [k, v] of filasTr) izq(`${k} ${v}`, false, 7.5);
+  }
   const rutGenerico = ['66.666.666-6', '0', '0-0', ''].includes(d.receptor.rut);
   if (!rutGenerico) {
     izq(`Cliente: ${d.receptor.razonSocial}`);

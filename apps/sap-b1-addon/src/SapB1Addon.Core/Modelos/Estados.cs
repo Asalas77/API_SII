@@ -103,7 +103,19 @@ namespace SapB1Addon.Core.Modelos
         public const string PdfUrl = "U_SII_PdfUrl";
         public const string IdemKey = "U_SII_IdemKey";
         public const string IndTraslado = "U_SII_IndTraslado";
+        /// <summary>OBSOLETO (texto libre): reemplazado por los UDF estructurados de traslado (Res. Ex. SII 144/2026).</summary>
         public const string Transporte = "U_SII_Transporte";
+        public const string CatTraslado = "U_SII_CatTraslado";
+        public const string DirOrigen = "U_SII_DirOrigen";
+        public const string CmnaOrigen = "U_SII_CmnaOrigen";
+        public const string RutTrans = "U_SII_RutTrans";
+        public const string RutChofer = "U_SII_RutChofer";
+        public const string NomChofer = "U_SII_NomChofer";
+        public const string Patente = "U_SII_Patente";
+        public const string PatenteCarro = "U_SII_PatenteCarro";
+        public const string FchSalida = "U_SII_FchSalida";
+        public const string HraSalida = "U_SII_HraSalida";
+        public const string FchLlegada = "U_SII_FchLlegada";
         public const string CodRef = "U_SII_CodRef";
         public const string RazonRef = "U_SII_RazonRef";
         public const string TipoDocRef = "U_SII_TipoDocRef";

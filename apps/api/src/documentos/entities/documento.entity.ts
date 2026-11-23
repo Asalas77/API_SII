@@ -35,6 +35,7 @@ const bigintNumero = {
   { unique: true, where: '"clave_idempotencia" IS NOT NULL' },
 )
 @Index('idx_documentos_empresa_estado', ['empresaId', 'estado'])
+@Index('idx_documentos_empresa_traslado_pendiente', ['empresaId'], { where: '"traslado_pendiente"' })
 export class Documento {
   @PrimaryColumn({ type: 'uuid', default: () => 'gen_random_uuid()' })
   id: string;
@@ -155,6 +156,18 @@ export class Documento {
   /** Resumen de la última respuesta de estado del SII. */
   @Column({ name: 'respuesta_estado_sii', type: 'jsonb', nullable: true })
   respuestaEstadoSii: unknown;
+
+  /**
+   * Res. Ex. SII 144/2026: traslado normalizado del documento (categoría, origen/destino, chofer, patentes,
+   * fechas, estado de cada campo) y la `solicitud` original de emisión (para complementar o corregir con una
+   * nueva guía). Null si el documento no informa traslado.
+   */
+  @Column({ type: 'jsonb', nullable: true })
+  traslado: Record<string, unknown> | null;
+
+  /** true si algún dato del traslado quedó "Diferido" o "Sin Dato" y falta complementarlo. */
+  @Column({ name: 'traslado_pendiente', type: 'boolean', default: false })
+  trasladoPendiente: boolean;
 
   /** Metadato opcional para correlacionar con el sistema de origen (p. ej. ERP). */
   @Column({ type: 'jsonb', nullable: true })

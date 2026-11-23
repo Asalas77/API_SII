@@ -15,10 +15,14 @@ import type { Response } from 'express';
 import { PERMISOS, PrincipalActual, RequierePermisos, type Principal } from '../auth/index.js';
 import { ProblemaHttp } from '../comun/problema.js';
 import {
+  type ComplementarTrasladoDto,
+  complementarTrasladoSchema,
   type ConsultarEstadosDto,
   consultarEstadosSchema,
   type EmitirDocumentoDto,
   emitirDocumentoSchema,
+  type ListarDocumentosQuery,
+  listarDocumentosSchema,
   type PdfQuery,
   pdfQuerySchema,
 } from './documentos.dto.js';
@@ -44,6 +48,20 @@ export class EmpresaDocumentosController {
     @Body({ schema: consultarEstadosSchema }) dto: ConsultarEstadosDto | undefined,
   ) {
     return this.estados.consultarLote(rut, dto ?? {});
+  }
+
+  /**
+   * Lista documentos de la empresa (más recientes primero). `?trasladoPendiente=true` devuelve los que tienen
+   * datos de traslado "Diferido" o "Sin Dato" por completar (Res. Ex. SII 144/2026).
+   */
+  @Get()
+  @RequierePermisos(PERMISOS.DOCUMENTOS_LEER)
+  async listar(
+    @Param('rut') rut: string,
+    @Query({ schema: listarDocumentosSchema }) query: ListarDocumentosQuery,
+  ) {
+    const docs = await this.servicio.listar(rut, query);
+    return { datos: docs.map((d) => aRespuestaDocumento(d, rut)) };
   }
 
   /**
@@ -92,6 +110,35 @@ export class DocumentosController {
   ) {
     const { documento, empresa } = await this.servicio.obtener(id, principal);
     return aRespuestaDocumento(documento, `${empresa.rut}-${empresa.dv}`);
+  }
+
+  /**
+   * Complementa o corrige los datos de traslado emitiendo una NUEVA guía 52 que referencia a la original
+   * (guía posterior o GDT; Res. Ex. SII 144/2026, resolutivos 4° y 5°). 201 al crear; 200 con
+   * `Idempotent-Replayed: true` si la `Idempotency-Key` ya existía.
+   */
+  @Post(':id/complementar-traslado')
+  @RequierePermisos(PERMISOS.DOCUMENTOS_EMITIR)
+  async complementarTraslado(
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Body({ schema: complementarTrasladoSchema }) dto: ComplementarTrasladoDto,
+    @Headers('idempotency-key') clave: string | undefined,
+    @PrincipalActual() principal: Principal,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    if (clave !== undefined && (clave.length === 0 || clave.length > 100)) {
+      throw new ProblemaHttp(400, 'VALIDACION', 'Idempotency-Key inválida', 'La Idempotency-Key debe tener entre 1 y 100 caracteres');
+    }
+    const r = await this.servicio.complementarTraslado(id, dto, clave, principal);
+    if (r.repetido) res.status(200).setHeader('Idempotent-Replayed', 'true');
+    const { documento: orig, empresa } = await this.servicio.obtener(r.original.id, principal);
+    const rutEmpresa = `${empresa.rut}-${empresa.dv}`;
+    return {
+      modalidad: r.modalidad,
+      documento: aRespuestaDocumento(r.documento, rutEmpresa),
+      original: aRespuestaDocumento(orig, rutEmpresa),
+      ...(r.advertencia ? { advertencia: r.advertencia } : {}),
+    };
   }
 
   /**

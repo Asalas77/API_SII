@@ -8,7 +8,7 @@ import { parsearCaf, type Caf } from '../dte-core/caf/caf.js';
 import { documentoDePrueba, RUT_EMISOR_PRUEBA } from '../dte-core/testing/documentos-prueba.js';
 import { generarCertificadoPrueba } from '../dte-core/testing/testing.js';
 import { extraerDatosImpresion } from './datos-impresion.js';
-import { admiteCedible, formatearMonto, generarPdf } from './generar-pdf.js';
+import { admiteCedible, filasTraslado, formatearMonto, generarPdf } from './generar-pdf.js';
 import { bytesTed, dimensionesPng, generarPdf417 } from './timbre-pdf417.js';
 
 const certificado = generarCertificadoPrueba({ rut: '12345678-5' });
@@ -186,6 +186,77 @@ describe('generarPdf', () => {
     esPdf(pdf);
     expect(admiteCedible(52, 5)).toBe(false);
     guarda('guia-despacho-52-cedible.pdf', pdf);
+  });
+
+  describe('datos del traslado (Res. Ex. SII 144/2026)', () => {
+    const guiaTraslado = (diferido: boolean): DocumentoDte => {
+      const base = factura(52);
+      return {
+        ...base,
+        idDoc: { ...base.idDoc, indTraslado: 1, formaPago: undefined },
+        referencias: [],
+        traslado: {
+          categoria: diferido ? 'tercerizado' : 'autogestionado',
+          origen: { direccion: 'Bodega Central 100', comuna: 'Quilicura' },
+          destino: { direccion: 'Los Leones 99', comuna: 'Ñuñoa', ciudad: 'Santiago' },
+          ...(diferido
+            ? { diferido: ['transportista', 'choferRut', 'choferNombre', 'patente', 'fechaSalida'] as const, patenteCarro: 'AB1234' }
+            : {
+                fechaSalida: '2026-02-01',
+                horaSalida: '09:30',
+                transportista: { rut: '76543210-3' },
+                chofer: { rut: '11222333-9', nombre: 'Juan Pérez Soto' },
+                patente: 'BCDF12',
+                patenteCarro: 'AB1234',
+              }),
+        } as DocumentoDte['traslado'],
+      };
+    };
+
+    it('extrae y ordena las filas con todos los datos', () => {
+      const d = extraerDatosImpresion(dte(guiaTraslado(false)).xmlIso);
+      const filas = Object.fromEntries(filasTraslado(d));
+      expect(filas).toMatchObject({
+        'Tipo de traslado:': '1 - Operación constituye venta',
+        'Origen:': 'Bodega Central 100, Quilicura',
+        'Destino:': 'Los Leones 99, Ñuñoa, Santiago',
+        'Chofer:': 'Juan Pérez Soto',
+        'RUT chofer:': '11.222.333-9',
+        'RUT transportista:': '76.543.210-3',
+        'Patente:': 'BCDF12',
+        'Patente carro:': 'AB1234',
+        'Fecha salida:': '01-02-2026 09:30:00',
+      });
+    });
+
+    it('imprime DIFERIDO / SIN DATO en lo que falta', () => {
+      const d = extraerDatosImpresion(dte(guiaTraslado(true)).xmlIso);
+      const filas = Object.fromEntries(filasTraslado(d));
+      expect(filas).toMatchObject({
+        'Chofer:': 'DIFERIDO',
+        'RUT chofer:': 'DIFERIDO',
+        'RUT transportista:': 'DIFERIDO',
+        'Patente:': 'DIFERIDO',
+        'Patente carro:': 'AB1234',
+        'Fecha salida:': 'DIFERIDO',
+      });
+    });
+
+    it('un documento sin traslado no trae la sección', () => {
+      expect(filasTraslado(extraerDatosImpresion(dte(factura()).xmlIso))).toEqual([]);
+    });
+
+    it('guía con traslado en carta y térmico', async () => {
+      for (const diferido of [false, true]) {
+        const xml = dte(guiaTraslado(diferido)).xmlIso;
+        const carta = await generarPdf(xml, { unidadSii: 'SANTIAGO CENTRO', resolucion, cedible: true });
+        const termica = await generarPdf(xml, { formato: 'termica80', resolucion });
+        esPdf(carta);
+        esPdf(termica);
+        guarda(`guia-52-traslado${diferido ? '-diferido' : ''}-carta.pdf`, carta);
+        guarda(`guia-52-traslado${diferido ? '-diferido' : ''}-termica.pdf`, termica);
+      }
+    });
   });
 
   it('boleta 39 térmica 80 mm', async () => {

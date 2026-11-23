@@ -21,6 +21,10 @@ export const envValidationSchema = Joi.object({
     .valid('certificacion', 'produccion')
     .default('certificacion'),
 
+  // Res. Ex. SII 144/2026: acepta IndTraslado 10-12 (GDT, traslado prolongado). Desactivado mientras el XSD oficial
+  // del SII no los enumere (el SII rechazaría el documento).
+  PERMITIR_INDTRASLADO_RES144: Joi.boolean().default(false),
+
   // Sondeo automático de los buzones de correo de intercambio (IMAP). Desactivado por defecto; nunca corre con
   // NODE_ENV=test. `BUZON_CORREO_TICK_SEGUNDOS` es cada cuánto se revisa qué buzones ya cumplieron su intervalo.
   BUZON_CORREO_HABILITADO: Joi.boolean().default(false),

@@ -337,6 +337,14 @@ describe('instalar-udfs', () => {
     expect(tipo.ValidValuesMD.map((v) => v.Value)).toEqual(['33', '34', '39', '41', '52', '56', '61']);
     expect(e.sl.udfs.has('ODLN.SII_IndTraslado')).toBe(true);
     expect(e.sl.udfs.has('OINV.SII_IndTraslado')).toBe(false);
+    const ind = e.sl.udfs.get('ODLN.SII_IndTraslado') as { ValidValuesMD: Array<{ Value: string }>; Size: number };
+    expect(ind.Size).toBe(2);
+    expect(ind.ValidValuesMD.map((v) => v.Value)).toEqual(['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12']);
+    for (const u of ['CatTraslado', 'DirOrigen', 'CmnaOrigen', 'RutTrans', 'RutChofer', 'NomChofer', 'Patente', 'PatenteCarro', 'FchSalida', 'HraSalida', 'FchLlegada']) {
+      expect(e.sl.udfs.has(`ODLN.SII_${u}`), u).toBe(true);
+      expect(e.sl.udfs.has(`OINV.SII_${u}`), u).toBe(false);
+    }
+    expect((e.sl.udfs.get('ODLN.SII_FchSalida') as { Type: string }).Type).toBe('db_Date');
   });
 
   it('trata el error "ya existe" de la creación como existente (carrera)', async () => {

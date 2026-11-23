@@ -35,7 +35,10 @@ namespace SapB1Addon.UI.Adaptadores
                     PaymentGroupCode = doc.PaymentGroupCode,
                     DiscountPercent = Com.Decimal(doc.DiscountPercent),
                     AttachmentEntry = doc.AttachmentEntry,
+                    Comments = doc.Comments,
+                    Address2 = doc.Address2,
                 };
+                LeerEntrega(doc, c);
                 LeerUdf(doc, c);
 
                 var lineas = doc.Lines;
@@ -92,6 +95,17 @@ namespace SapB1Addon.UI.Adaptadores
                 c.SiiIdemKey = TextoUdf(campos, Core.Modelos.Udf.IdemKey);
                 c.SiiIndTraslado = TextoUdf(campos, Core.Modelos.Udf.IndTraslado);
                 c.SiiTransporte = TextoUdf(campos, Core.Modelos.Udf.Transporte);
+                c.SiiCatTraslado = TextoUdf(campos, Core.Modelos.Udf.CatTraslado);
+                c.SiiDirOrigen = TextoUdf(campos, Core.Modelos.Udf.DirOrigen);
+                c.SiiCmnaOrigen = TextoUdf(campos, Core.Modelos.Udf.CmnaOrigen);
+                c.SiiRutTrans = TextoUdf(campos, Core.Modelos.Udf.RutTrans);
+                c.SiiRutChofer = TextoUdf(campos, Core.Modelos.Udf.RutChofer);
+                c.SiiNomChofer = TextoUdf(campos, Core.Modelos.Udf.NomChofer);
+                c.SiiPatente = TextoUdf(campos, Core.Modelos.Udf.Patente);
+                c.SiiPatenteCarro = TextoUdf(campos, Core.Modelos.Udf.PatenteCarro);
+                c.SiiFchSalida = FechaUdf(campos, Core.Modelos.Udf.FchSalida);
+                c.SiiHraSalida = TextoUdf(campos, Core.Modelos.Udf.HraSalida);
+                c.SiiFchLlegada = FechaUdf(campos, Core.Modelos.Udf.FchLlegada);
                 c.SiiCodRef = TextoUdf(campos, Core.Modelos.Udf.CodRef);
                 c.SiiRazonRef = TextoUdf(campos, Core.Modelos.Udf.RazonRef);
                 c.SiiTipoDocRef = TextoUdf(campos, Core.Modelos.Udf.TipoDocRef);
@@ -123,6 +137,36 @@ namespace SapB1Addon.UI.Adaptadores
         }
 
         private static string TextoUdf(SAPbobsCOM.Fields campos, string nombre) => Com.Cadena(Valor(campos, nombre));
+
+        /// <summary>UDF de fecha: la DI API devuelve DateTime; una fecha vacía llega como 1899-12-30 o menor a 2000 y se trata como ausente.</summary>
+        private static DateTime? FechaUdf(SAPbobsCOM.Fields campos, string nombre)
+        {
+            var v = Valor(campos, nombre);
+            if (v is DateTime d && d.Year >= 2000) return d.Date;
+            return null;
+        }
+
+        /// <summary>Dirección de entrega estructurada (<c>AddressExtension.ShipTo*</c>); ShipToCounty = comuna (supuesto).</summary>
+        private static void LeerEntrega(SAPbobsCOM.Documents doc, CabeceraDocumento c)
+        {
+            SAPbobsCOM.AddressExtension? ext = null;
+            try
+            {
+                ext = doc.AddressExtension;
+                c.EntregaCalle = ext.ShipToStreet;
+                c.EntregaNumero = ext.ShipToStreetNo;
+                c.EntregaCiudad = ext.ShipToCity;
+                c.EntregaComuna = ext.ShipToCounty;
+            }
+            catch (System.Runtime.InteropServices.COMException)
+            {
+                // Documento sin extensión de dirección: el destino queda vacío y el validador lo informa.
+            }
+            finally
+            {
+                Com.Liberar(ext);
+            }
+        }
 
         /// <summary>Socio de negocios (RUT, giro, correo, teléfono y direcciones); null si no existe.</summary>
         public SocioNegocio? LeerSocio(string cardCode, string campoGiro)

@@ -166,7 +166,7 @@ flowchart LR
 | **2** | API pública (OpenAPI), PDF/PDF417, entrega digital, webhooks, backoffice mínimo de CAF y certificados | **Pendiente** (sólo el prefijo `/v1` y las tablas) | Endpoints `/v1`, autenticación por empresa, idempotencia, cola y worker (Redis/BullMQ), PDF con PDF417, entrega digital, webhooks, documentación OpenAPI, cifrado de sobre, object storage |
 | **3** | Certificación SII de la primera empresa (DTE y boleta en paralelo) | **Pendiente** | Set de pruebas, simulación, intercambio, muestras impresas, declaración de cumplimiento; sitio de consulta de boletas |
 | **4** | Integración SAP B1: worker Service Layer, luego add-on UI API | **Pendiente** | Diseño de mapeo B1 a DTE, UDFs, adjuntos, pruebas con base localizada Chile |
-| **5** | Guías con trazabilidad, exportación, intercambio, recepción de compras, aceptación y reclamo | **Parcial**: recepción de DTE de proveedores, respuestas de intercambio, recibo Ley 19.983 y RegistroReclamoDTE implementados (`apps/api/src/recepcion`); faltan guías Res. 144/2026 y exportación | Res. 144/2026, tipos 110/111/112/43/46, buzón de intercambio, REGISTRORECLAMODTE |
+| **5** | Guías con trazabilidad, exportación, intercambio, recepción de compras, aceptación y reclamo | **Parcial**: recepción de DTE de proveedores, respuestas de intercambio, recibo Ley 19.983 y RegistroReclamoDTE implementados (`apps/api/src/recepcion`); guías y facturas con traslado según la Res. 144/2026 implementadas (IndTraslado 10-12 desactivados hasta que el SII publique el XSD); falta exportación | Res. 144/2026, tipos 110/111/112/43/46, buzón de intercambio, REGISTRORECLAMODTE |
 
 ### 4.1 Siguiente hito recomendado
 

@@ -8,7 +8,7 @@ export interface DefinicionUdf {
   /** Nombre sin el prefijo `U_`. */
   nombre: string;
   descripcion: string;
-  tipo: 'db_Alpha' | 'db_Memo' | 'db_Numeric';
+  tipo: 'db_Alpha' | 'db_Memo' | 'db_Numeric' | 'db_Date';
   tamano?: number;
   tablas: readonly TablaB1[];
   valoresValidos?: ReadonlyArray<{ valor: string; descripcion: string }>;
@@ -56,8 +56,51 @@ export const UDFS: readonly DefinicionUdf[] = [
   { nombre: 'SII_XmlUrl', descripcion: 'SII URL XML', tipo: 'db_Alpha', tamano: 254, tablas: DOCS },
   { nombre: 'SII_PdfUrl', descripcion: 'SII URL PDF', tipo: 'db_Alpha', tamano: 254, tablas: DOCS },
   { nombre: 'SII_IdemKey', descripcion: 'SII Idempotency-Key', tipo: 'db_Alpha', tamano: 100, tablas: DOCS },
-  { nombre: 'SII_IndTraslado', descripcion: 'SII Ind. traslado', tipo: 'db_Alpha', tamano: 1, tablas: ['ODLN'] },
-  { nombre: 'SII_Transporte', descripcion: 'SII Datos transporte', tipo: 'db_Alpha', tamano: 254, tablas: ['ODLN'] },
+  {
+    nombre: 'SII_IndTraslado',
+    descripcion: 'SII Ind. traslado',
+    tipo: 'db_Alpha',
+    tamano: 2,
+    tablas: ['ODLN'],
+    valoresValidos: [
+      { valor: '1', descripcion: '1 Operacion constituye venta' },
+      { valor: '2', descripcion: '2 Ventas por efectuar' },
+      { valor: '3', descripcion: '3 Consignaciones' },
+      { valor: '4', descripcion: '4 Entrega gratuita' },
+      { valor: '5', descripcion: '5 Traslados internos' },
+      { valor: '6', descripcion: '6 Otros traslados no venta' },
+      { valor: '7', descripcion: '7 Devolucion de mercaderias' },
+      { valor: '8', descripcion: '8 Traslado para exportacion (no venta)' },
+      { valor: '9', descripcion: '9 Venta de exportacion' },
+      { valor: '10', descripcion: '10 Traslado tercerizado (GDT)' },
+      { valor: '11', descripcion: '11 Traslado prolongado, importa venta' },
+      { valor: '12', descripcion: '12 Traslado prolongado, no venta' },
+    ],
+  },
+  // OBSOLETO desde la Res. Ex. SII 144/2026: se conserva por compatibilidad; usar los UDF estructurados.
+  { nombre: 'SII_Transporte', descripcion: 'SII Transporte (obsoleto)', tipo: 'db_Alpha', tamano: 254, tablas: ['ODLN'] },
+  {
+    nombre: 'SII_CatTraslado',
+    descripcion: 'SII Categoria traslado',
+    tipo: 'db_Alpha',
+    tamano: 20,
+    tablas: ['ODLN'],
+    valoresValidos: [
+      { valor: 'AUTOGESTIONADO', descripcion: 'Transporte autogestionado (todos los datos)' },
+      { valor: 'TERCERIZADO', descripcion: 'Transporte tercerizado (datos diferidos)' },
+      { valor: 'REGIMEN_ESPECIAL', descripcion: 'Regimen especial (Aduanas, SAG, etc.)' },
+    ],
+  },
+  { nombre: 'SII_DirOrigen', descripcion: 'SII Direccion origen', tipo: 'db_Alpha', tamano: 70, tablas: ['ODLN'] },
+  { nombre: 'SII_CmnaOrigen', descripcion: 'SII Comuna origen', tipo: 'db_Alpha', tamano: 20, tablas: ['ODLN'] },
+  { nombre: 'SII_RutTrans', descripcion: 'SII RUT transportista', tipo: 'db_Alpha', tamano: 12, tablas: ['ODLN'] },
+  { nombre: 'SII_RutChofer', descripcion: 'SII RUT chofer', tipo: 'db_Alpha', tamano: 12, tablas: ['ODLN'] },
+  { nombre: 'SII_NomChofer', descripcion: 'SII Nombre chofer', tipo: 'db_Alpha', tamano: 30, tablas: ['ODLN'] },
+  { nombre: 'SII_Patente', descripcion: 'SII Patente', tipo: 'db_Alpha', tamano: 10, tablas: ['ODLN'] },
+  { nombre: 'SII_PatenteCarro', descripcion: 'SII Patente carro', tipo: 'db_Alpha', tamano: 10, tablas: ['ODLN'] },
+  { nombre: 'SII_FchSalida', descripcion: 'SII Fecha salida', tipo: 'db_Date', tablas: ['ODLN'] },
+  { nombre: 'SII_HraSalida', descripcion: 'SII Hora salida', tipo: 'db_Alpha', tamano: 8, tablas: ['ODLN'] },
+  { nombre: 'SII_FchLlegada', descripcion: 'SII Fecha llegada', tipo: 'db_Date', tablas: ['ODLN'] },
   { nombre: 'SII_CodRef', descripcion: 'SII Cod. referencia', tipo: 'db_Alpha', tamano: 1, tablas: NOTAS },
   { nombre: 'SII_RazonRef', descripcion: 'SII Razon referencia', tipo: 'db_Alpha', tamano: 90, tablas: NOTAS },
   { nombre: 'SII_TipoDocRef', descripcion: 'SII Tipo doc. referencia', tipo: 'db_Alpha', tamano: 3, tablas: NOTAS },

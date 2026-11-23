@@ -23,6 +23,7 @@ https://www.sii.cl/servicios_online/3532-formato_xml-3811.html
 | `SII_Formato_IECV_Libros_Compra_Venta.pdf` | Formato de la Información Electrónica de Compras y Ventas (IECV, v2.2 2011): carátula, resumen de segmento/período, detalle, códigos de documento e impuestos | https://www.sii.cl/factura_electronica/formato_iecv.pdf |
 | `SII_Formato_Libro_Guias_Despacho.pdf` | Formato del Libro de Guías de Despacho Electrónicas (v1.0, 2003) | https://www.sii.cl/factura_electronica/formato_lgd.pdf |
 | `SII_Res_Ex_144_2026_Facturas_Guias_Traslado.pdf` | Res. Ex. 144 (23-10-2026): exigencias en facturas y guías que amparan traslado; deroga la 154/2025 | https://www.sii.cl/normativa_legislacion/resoluciones/2026/reso144.pdf |
+| `SII_Formato_DTE_v2.5_2026-02.pdf` | Formato DTE v2.5 (2026-02, 54 págs.), el vigente a 2026-11-22. Describe `IndTraslado` 1-9, `Transporte` (`Patente`, `PatenteCarro`, `RUTTrans`, `Chofer`, `DirDest`...), `FchSalida`/`HraSalida`/`FchLlegada` y `RUTOtr`; cita la Res. 154/2025 (derogada por la 144). NO menciona `IndTraslado` 10-12, "Diferido"/"Sin Dato", GDT ni ATT | https://www.sii.cl/factura_electronica/factura_mercado/formato_dte_202602.pdf (enlazado desde https://www.sii.cl/servicios_online/3532-descripcion_formato-3811.html) |
 
 ## XSD
 
@@ -58,3 +59,15 @@ Nota: la URL del PDF para certificación que da el documento (`.../WSREGISTROREC
 boleta electrónica, obtenida de https://www4c.sii.cl/bolcoreinternetui/api/openapi.json. Sirve para generar clientes y para
 levantar un mock (por ejemplo con Prism) en pruebas. Contiene un carácter de control inválido en una descripción: al
 parsear con un lector estricto hay que tolerar control characters.
+
+## Res. Ex. 144/2026: verificación de formato y XSD (2026-11-22)
+
+Se buscó el XSD y el formato técnico actualizados para las exigencias de la Res. Ex. 144 (guías y facturas que amparan traslado):
+
+- `https://www.sii.cl/factura_electronica/factura_mercado/schema_dte.zip` (enlazado desde https://www.sii.cl/servicios_online/3532-formato_xml-3811.html) devuelve un zip idéntico byte a byte (SHA-256 `59429e27...b6c5bee`) a `xsd/schema_dte_2026-02-19.zip`: `DTE_v10.xsd` 2026-02-19, `IndTraslado` solo 1-9. No hay un XSD más nuevo.
+- `https://www.sii.cl/factura_electronica/schema_dte.zip` (sin `factura_mercado/`) sirve una versión antigua de 2011; NO se usa.
+- `https://www.sii.cl/factura_electronica/factura_mercado/formato_dte_202602.pdf` (v2.5, 2026-02) es el formato más reciente publicado; se guardó como `pdf/SII_Formato_DTE_v2.5_2026-02.pdf`. `https://www.sii.cl/servicios_online/docs/formato_dte.pdf` y `.../factura_mercado/formato_dte.pdf` son versiones anteriores (2014 y 2019).
+- La página del instructivo técnico (https://www.sii.cl/factura_electronica/factura_mercado/instructivo.htm) no lista un manual del Anexo de Transporte Tercerizado (ATT), ni un anexo de formato de la Res. 144. Probadas sin éxito (404): `att.pdf`, `manual_att.pdf`, `formato_att.pdf`, `formato_dte_202610.pdf`, `formato_dte_202611.pdf`, `schema_att.zip`, `schema_dte_2026.zip`.
+- El Anexo de la propia resolución (página 8 del PDF, es una imagen) solo lista los tags; no define la representación de "Diferido"/"Sin Dato".
+
+Consecuencia para el código: `IndTraslado` 10, 11 y 12 NO están en el XSD oficial y el ATT no está disponible; ver `apps/api/src/dte-core/README.md` (sección Res. Ex. 144/2026).

@@ -238,6 +238,7 @@ namespace SapB1Addon.Core
             }
 
             var idDoc = new CuerpoIdDoc { TipoDte = tipo, FechaEmision = fechaEmision };
+            CuerpoTraslado? traslado = null;
 
             // Forma de pago y vencimiento (no aplican a boletas ni a guías)
             if (!boleta && tipo != 52)
@@ -251,10 +252,15 @@ namespace SapB1Addon.Core
             // Guía de despacho
             if (tipo == 52)
             {
-                if (!int.TryParse((doc.SiiIndTraslado ?? "").Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out var ind) || ind < 1 || ind > 9)
-                    errores.Add("Guía de despacho: U_SII_IndTraslado es obligatorio (1 a 9)");
+                if (!int.TryParse((doc.SiiIndTraslado ?? "").Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out var ind) || ind < 1 || ind > 12)
+                    errores.Add("Guía de despacho: U_SII_IndTraslado es obligatorio (1 a 12)");
+                else if (ind == 10)
+                    errores.Add("U_SII_IndTraslado 10 (guía de despacho tercerizada, GDT) no se emite desde B1: exige referenciar el documento original y el XSD oficial del SII aún no la enumera");
                 else
+                {
                     idDoc.IndTraslado = ind;
+                    traslado = MapearTraslado(doc, ind, detalle.Any(d => !(d.PrecioUnitario > 0)), errores, r.Advertencias);
+                }
             }
 
             // Descuento de cabecera: afecto y exento por separado si el documento es mixto.
@@ -287,11 +293,144 @@ namespace SapB1Addon.Core
             if (errores.Count > 0) return r;
 
             var cuerpo = new CuerpoDocumento { IdDoc = idDoc, Detalle = detalle, Origen = origen };
+            if (traslado != null) cuerpo.Traslado = traslado;
             if (receptor != null) cuerpo.Receptor = receptor;
             if (descuentos != null && descuentos.Count > 0) cuerpo.DescuentosRecargos = descuentos;
             if (referencias != null && referencias.Count > 0) cuerpo.Referencias = referencias;
             r.Cuerpo = cuerpo;
             return r;
+        }
+
+        private static readonly Dictionary<string, string> Categorias = new Dictionary<string, string>
+        {
+            { "AUTOGESTIONADO", "autogestionado" },
+            { "TERCERIZADO", "tercerizado" },
+            { "REGIMEN_ESPECIAL", "regimen_especial" },
+        };
+
+        private static readonly Dictionary<int, string> DescripcionIndTraslado = new Dictionary<int, string>
+        {
+            { 1, "Operación constituye venta" }, { 2, "Ventas por efectuar" }, { 3, "Consignaciones" },
+            { 4, "Entrega gratuita" }, { 5, "Traslados internos" }, { 6, "Otros traslados no venta" },
+            { 7, "Devolución de mercaderías" }, { 8, "Traslado para exportación (no venta)" },
+            { 9, "Venta de exportación" }, { 10, "Traslado tercerizado" },
+            { 11, "Traslado prolongado, importa venta" }, { 12, "Traslado prolongado, no venta" },
+        };
+
+        private static readonly int[] IndSinPrecio = { 4, 5, 6, 7, 8, 12 };
+
+        /// <summary>Valor de un UDF de texto: vacío, "DIFERIDO", "SIN DATO" (cualquier caso) o el dato.</summary>
+        private static void ValorUdf(string? v, out string? dato, out string marca)
+        {
+            var t = (v ?? "").Trim();
+            dato = null;
+            marca = "";
+            if (t.Length == 0) return;
+            if (string.Equals(t, "diferido", StringComparison.OrdinalIgnoreCase)) marca = "diferido";
+            else if (Regex.IsMatch(t, @"^sin\s*dato$", RegexOptions.IgnoreCase)) marca = "sinDato";
+            else dato = t;
+        }
+
+        /// <summary>
+        /// Port de <c>mapearTraslado</c> del worker: bloque <c>traslado</c> de la guía desde los UDF estructurados (Res. Ex. SII
+        /// 144/2026). Sin <c>U_SII_CatTraslado</c> no hay bloque (advertencia). Si difiere del worker, manda el worker.
+        /// </summary>
+        private static CuerpoTraslado? MapearTraslado(CabeceraDocumento doc, int ind, bool hayLineaSinPrecio, List<string> errores, List<string> advertencias)
+        {
+            var crudo = (doc.SiiCatTraslado ?? "").Trim().ToUpperInvariant();
+            if (crudo.Length == 0)
+            {
+                advertencias.Add("Guía sin U_SII_CatTraslado: se emite sin datos de traslado (Res. Ex. SII 144/2026 los exige desde el 2026-11-01)" +
+                    ((doc.SiiTransporte ?? "").Trim().Length > 0 ? "; U_SII_Transporte está obsoleto y no reemplaza a los UDF estructurados" : ""));
+                return null;
+            }
+            if (!Categorias.TryGetValue(crudo, out var categoria))
+            {
+                errores.Add("U_SII_CatTraslado \"" + crudo + "\" inválido (" + string.Join(", ", Categorias.Keys) + ")");
+                return null;
+            }
+            var erroresAntes = errores.Count;
+            var t = new CuerpoTraslado { Categoria = categoria };
+            var diferido = new List<string>();
+            var sinDato = new List<string>();
+
+            string? Aplicar(string campo, string? valor, string udf)
+            {
+                ValorUdf(valor, out var dato, out var marca);
+                if (marca == "diferido") diferido.Add(campo);
+                else if (marca == "sinDato") sinDato.Add(campo);
+                else if (dato == null)
+                {
+                    if (categoria == "tercerizado") diferido.Add(campo);
+                    else if (categoria == "autogestionado" && campo != "patenteCarro") errores.Add(udf + " es obligatorio en el transporte autogestionado");
+                }
+                return dato;
+            }
+            string? RutUdf(string? v, string udf)
+            {
+                if (v == null) return null;
+                var n = Rut.Normalizar(v);
+                if (n == null) errores.Add(udf + " inválido (dígito verificador o formato): \"" + v + "\"");
+                return n;
+            }
+
+            var dirOrigen = Trunc(doc.SiiDirOrigen, 70);
+            var cmnaOrigen = Trunc(doc.SiiCmnaOrigen, 20);
+            if (dirOrigen.Length > 0 || cmnaOrigen.Length > 0)
+            {
+                if (dirOrigen.Length > 0 && cmnaOrigen.Length > 0) t.Origen = new CuerpoDireccion { Direccion = dirOrigen, Comuna = cmnaOrigen };
+                else errores.Add("U_SII_DirOrigen y U_SII_CmnaOrigen se informan juntos");
+            }
+
+            // Destino: dirección de entrega del documento.
+            var calle = string.Join(" ", new[] { doc.EntregaCalle, doc.EntregaNumero }.Select(s => (s ?? "").Trim()).Where(s => s.Length > 0));
+            if (calle.Length == 0) calle = Trunc((doc.Address2 ?? "").Split(new[] { '\r', '\n' }, StringSplitOptions.None)[0], 70);
+            if (calle.Length > 70) calle = calle.Substring(0, 70);
+            var comuna = Trunc(doc.EntregaComuna, 20);
+            var ciudad = Trunc(doc.EntregaCiudad, 20);
+            if (calle.Length > 0 && comuna.Length > 0)
+                t.Destino = new CuerpoDireccion { Direccion = calle, Comuna = comuna, Ciudad = ciudad.Length > 0 ? ciudad : null };
+            else if (categoria != "regimen_especial")
+                errores.Add("La guía no tiene dirección de entrega completa (calle y comuna: AddressExtension.ShipToStreet y ShipToCounty) para el destino del traslado");
+
+            var rutTrans = RutUdf(Aplicar("transportista", doc.SiiRutTrans, Udf.RutTrans), Udf.RutTrans);
+            if (rutTrans != null) t.Transportista = new CuerpoTransportista { Rut = rutTrans };
+            var rutChofer = RutUdf(Aplicar("choferRut", doc.SiiRutChofer, Udf.RutChofer), Udf.RutChofer);
+            var nombre = Aplicar("choferNombre", doc.SiiNomChofer, Udf.NomChofer);
+            if (nombre != null && nombre.Length > 30) errores.Add("U_SII_NomChofer admite hasta 30 caracteres (tiene " + nombre.Length + ")");
+            if (rutChofer != null || nombre != null) t.Chofer = new CuerpoChofer { Rut = rutChofer, Nombre = nombre };
+            var patente = Aplicar("patente", doc.SiiPatente, Udf.Patente);
+            if (patente != null) t.Patente = patente;
+            var carro = Aplicar("patenteCarro", doc.SiiPatenteCarro, Udf.PatenteCarro);
+            if (carro != null) t.PatenteCarro = carro;
+
+            if (doc.SiiFchSalida.HasValue) t.FechaSalida = Fecha(doc.SiiFchSalida);
+            else if (categoria == "tercerizado") diferido.Add("fechaSalida");
+            else if (categoria == "autogestionado") errores.Add("U_SII_FchSalida es obligatorio en el transporte autogestionado");
+            var hora = Trunc(doc.SiiHraSalida, 8);
+            if (hora.Length > 0)
+            {
+                if (Regex.IsMatch(hora, @"^\d{2}:\d{2}(:\d{2})?$")) t.HoraSalida = hora;
+                else errores.Add("U_SII_HraSalida inválida (\"" + hora + "\"), se espera HH:MM o HH:MM:SS");
+            }
+            if (doc.SiiFchLlegada.HasValue) t.FechaLlegada = Fecha(doc.SiiFchLlegada);
+
+            if (ind == 11 || ind == 12)
+            {
+                if (t.FechaLlegada == null) errores.Add("El traslado prolongado (11/12) requiere U_SII_FchLlegada (fecha estimada de llegada)");
+                var desc = Trunc(doc.Comments, 400);
+                if (desc.Length == 0) errores.Add("El traslado prolongado (11/12) requiere describir el motivo en Comments (distancia, carga especial, etc.)");
+                else t.DescripcionProlongado = desc;
+            }
+            if (IndSinPrecio.Contains(ind) && hayLineaSinPrecio)
+            {
+                var motivo = Trunc(doc.Comments, 200);
+                t.MotivoSinPrecio = motivo.Length > 0 ? motivo : DescripcionIndTraslado[ind];
+            }
+
+            if (diferido.Count > 0) t.Diferido = diferido;
+            if (sinDato.Count > 0) t.SinDato = sinDato;
+            return errores.Count > erroresAntes ? null : t;
         }
 
         private class Dir

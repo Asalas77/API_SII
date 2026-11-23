@@ -119,6 +119,12 @@ describe('documentoADetalleGuia', () => {
     expect(documentoADetalleGuia(guia(5)).tipoOperacion).toBe(5);
   });
 
+  it('Res. 144: 10 a 12 (el libro solo define 1 a 7; mapeo supuesto)', () => {
+    expect(documentoADetalleGuia(guia(10)).tipoOperacion).toBe(6);
+    expect(documentoADetalleGuia(guia(11)).tipoOperacion).toBe(1);
+    expect(documentoADetalleGuia(guia(12)).tipoOperacion).toBe(6);
+  });
+
   it('folio anulado', () => {
     expect(documentoADetalleGuia(guia(1, { estado: 'anulado' }))).toEqual({ folio: 5, anulado: 1 });
   });

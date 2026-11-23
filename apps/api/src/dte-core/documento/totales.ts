@@ -33,6 +33,13 @@ export function netoDesdeBruto(bruto: number): number {
  */
 export function calcularMontoLinea(linea: DetalleDte, numeroLinea = 0): number {
   const ref = `Línea ${numeroLinea || '?'} (${linea.nombre})`;
+  if (linea.cantidad === undefined) {
+    // Solo la guía tercerizada (IndTraslado 10) omite la cantidad: sin cantidad no hay monto.
+    if (linea.precioUnitario > 0 || linea.descuentoPorcentaje !== undefined || linea.descuentoMonto !== undefined) {
+      throw new ErrorValidacionDte(`${ref}: sin cantidad no puede informar precio ni descuento`);
+    }
+    return 0;
+  }
   if (!Number.isFinite(linea.cantidad) || linea.cantidad <= 0) {
     throw new ErrorValidacionDte(`${ref}: la cantidad debe ser mayor que 0`);
   }

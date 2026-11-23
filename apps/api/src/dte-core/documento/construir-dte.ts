@@ -8,10 +8,12 @@ import {
   formatearRut,
   formatearTimestampSii,
   sanearLatin1,
+  separarRut,
   validarDv,
 } from '../xml/xml.util.js';
 import { ErrorValidacionDte } from './errores.js';
 import { calcularTotales } from './totales.js';
+import { literalMarcador, normalizarTraslado, TIPOS_DOC_TRIBUTARIOS, type TrasladoNormalizado } from './traslado.js';
 import {
   esBoleta,
   esTipoExento,
@@ -21,6 +23,7 @@ import {
   MAX_LINEAS_DETALLE_DTE,
   MAX_REFERENCIAS,
   TIPOS_DTE,
+  type DetalleDte,
   type DocumentoDte,
   type EmisorDte,
   type ReceptorDte,
@@ -38,6 +41,11 @@ export interface OpcionesConstruirDte {
    * ver `TIPOS_CAF_CON_VENCIMIENTO`). Por defecto `true`.
    */
   validarVigenciaCaf?: boolean;
+  /**
+   * Acepta `IndTraslado` 10, 11 y 12 (Res. Ex. SII 144/2026). Por defecto `false`: el XSD oficial vigente
+   * (DTE_v10.xsd de 2026-02-19) solo enumera 1 a 9 y el SII no ha publicado el formato de la GDT/ATT.
+   */
+  permitirIndTrasladoRes144?: boolean;
 }
 
 /**
@@ -58,6 +66,8 @@ export interface DteConstruido {
   /** Valor del atributo `ID` de `Documento` (`F{folio}T{tipo}`). */
   idDocumento: string;
   totales: TotalesDte;
+  /** Traslado validado y normalizado (Res. Ex. SII 144/2026); `undefined` si el documento no trae `traslado`. */
+  traslado?: TrasladoNormalizado;
 }
 
 export const NS_SII = 'http://www.sii.cl/SiiDte';
@@ -111,7 +121,12 @@ function validarFecha(valor: string | undefined, ctx: string): void {
 // Validación de negocio
 // ---------------------------------------------------------------------------------------------
 
-function validarDocumento(doc: DocumentoDte, caf: Caf, validarVigenciaCaf: boolean): void {
+function validarDocumento(
+  doc: DocumentoDte,
+  caf: Caf,
+  validarVigenciaCaf: boolean,
+  permitirIndTrasladoRes144: boolean,
+): TrasladoNormalizado | undefined {
   const { idDoc, emisor, receptor } = doc;
   const tipo = idDoc.tipoDte;
   if (!TIPOS_DTE.includes(tipo)) throw new ErrorValidacionDte(`Tipo de documento no soportado: ${String(tipo)}`);
@@ -197,7 +212,7 @@ function validarDocumento(doc: DocumentoDte, caf: Caf, validarVigenciaCaf: boole
 
   // Campos exclusivos por tipo
   if (idDoc.indTraslado !== undefined && tipo !== 52) {
-    throw new ErrorValidacionDte('indTraslado solo aplica a guías de despacho (52)');
+    throw new ErrorValidacionDte('indTraslado solo aplica a guías de despacho (52)', 'idDoc.indTraslado');
   }
   if (!boleta && idDoc.medioPago !== undefined) {
     throw new ErrorValidacionDte('medioPago (numérico) solo aplica a boletas; use medioPagoDte');
@@ -216,6 +231,13 @@ function validarDocumento(doc: DocumentoDte, caf: Caf, validarVigenciaCaf: boole
     );
   }
 
+  // La cantidad solo puede omitirse en la guía de despacho tercerizada (resolutivo 6°): referencia el detalle original.
+  doc.detalle.forEach((l, i) => {
+    if (l.cantidad === undefined && !(tipo === 52 && idDoc.indTraslado === 10)) {
+      throw new ErrorValidacionDte(`detalle[${i}].cantidad: es obligatoria`, `detalle[${i}].cantidad`);
+    }
+  });
+
   // Referencias
   for (const [i, r] of (doc.referencias ?? []).entries()) {
     const ctx = `Referencia ${i + 1}`;
@@ -224,6 +246,23 @@ function validarDocumento(doc: DocumentoDte, caf: Caf, validarVigenciaCaf: boole
       throw new ErrorValidacionDte(`${ctx}: folioRef inválido`);
     }
     validarFecha(r.fechaRef, `${ctx}: fechaRef`);
+    if (r.rutOtroContribuyente !== undefined) {
+      const campo = `referencias[${i}].rutOtroContribuyente`;
+      if (boleta) throw new ErrorValidacionDte(`${campo}: las boletas no admiten RUTOtr`, campo);
+      const m = separarRut(r.rutOtroContribuyente);
+      if (!m || !validarDv(m.numero, m.dv)) {
+        throw new ErrorValidacionDte(`${campo}: RUT inválido (${r.rutOtroContribuyente})`, campo);
+      }
+      if (!TIPOS_DOC_TRIBUTARIOS.includes(r.tipoDocRef.trim())) {
+        throw new ErrorValidacionDte(
+          `${campo}: solo se informa si el documento referido es tributario (el tipo ${r.tipoDocRef} no lo es)`,
+          campo,
+        );
+      }
+      if (formatearRut(m.numero, m.dv) === rutEmisor) {
+        throw new ErrorValidacionDte(`${campo}: debe ser de otro contribuyente (es el mismo emisor, ${rutEmisor})`, campo);
+      }
+    }
   }
   if (tipo === 56 || tipo === 61) {
     const reales = (doc.referencias ?? []).filter((r) => r.tipoDocRef !== 'SET');
@@ -236,6 +275,9 @@ function validarDocumento(doc: DocumentoDte, caf: Caf, validarVigenciaCaf: boole
       throw new ErrorValidacionDte(`Las referencias de la nota ${tipo} deben informar codRef (1, 2 o 3)`);
     }
   }
+
+  // Traslado (Res. Ex. SII 144/2026): valida IndTraslado 1-12, categoría y datos de transporte.
+  return normalizarTraslado(doc, { permitirIndTrasladoRes144 });
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -275,10 +317,13 @@ function xmlIdDoc(doc: DocumentoDte): string {
   );
 }
 
-function xmlEmisor(e: EmisorDte, boleta: boolean): string {
+function xmlEmisor(e: EmisorDte, boleta: boolean, traslado?: TrasladoNormalizado): string {
   const rut = tag('RUTEmisor', formatearRut(String(e.rut).replace(/\D/g, ''), e.dv));
   const sucursal = tag('CdgSIISucur', e.codigoSucursalSii);
-  const origen = tag('DirOrigen', e.direccion, 70) + tag('CmnaOrigen', e.comuna, 20) + tag('CiudadOrigen', e.ciudad, 20);
+  // Con traslado, `DirOrigen`/`CmnaOrigen` son el origen efectivo del traslado (Res. 144, Anexo).
+  const dirOrigen = traslado?.origen?.direccion ?? e.direccion;
+  const cmnaOrigen = traslado?.origen?.comuna || e.comuna;
+  const origen = tag('DirOrigen', dirOrigen, 70) + tag('CmnaOrigen', cmnaOrigen, 20) + tag('CiudadOrigen', e.ciudad, 20);
   if (boleta) {
     return `<Emisor>${rut}${tag('RznSocEmisor', e.razonSocial, 100)}${tag('GiroEmisor', e.giro, 80)}${sucursal}${origen}</Emisor>`;
   }
@@ -302,6 +347,32 @@ function xmlReceptor(r: ReceptorDte, boleta: boolean): string {
     `<Receptor>${rut}${tag('RznSocRecep', r.razonSocial, 100)}${tag('GiroRecep', r.giro, 40)}` +
     `${tag('Contacto', r.telefono, 80)}${tag('CorreoRecep', r.correo, 80)}${ubicacion}</Receptor>`
   );
+}
+
+/**
+ * `Transporte` (entre `Receptor` y `Totales`). Orden del XSD: Patente, PatenteCarro, RUTTrans, Chofer, DirDest,
+ * CmnaDest, CiudadDest, FchSalida, HraSalida, FchLlegada. "Diferido"/"Sin Dato" se escriben literalmente solo en los
+ * campos de texto (`Patente`, `PatenteCarro`, `NombreChofer`); los de tipo RUT/fecha se omiten y la marca queda
+ * en la nota del detalle (SUPUESTO: no hay representación oficial).
+ */
+function xmlTransporte(n: TrasladoNormalizado | undefined): string {
+  if (!n || n.retiroComprador) return '';
+  const chofer =
+    n.choferRut !== undefined
+      ? `<Chofer>${tag('RUTChofer', n.choferRut)}${tag('NombreChofer', n.choferNombre ?? literalMarcador(n.estados.choferNombre), 30)}</Chofer>`
+      : '';
+  const cuerpo =
+    tag('Patente', n.patente ?? literalMarcador(n.estados.patente), 8) +
+    tag('PatenteCarro', n.patenteCarro ?? literalMarcador(n.estados.patenteCarro), 8) +
+    tag('RUTTrans', n.transportistaRut) +
+    chofer +
+    tag('DirDest', n.destino?.direccion, 70) +
+    tag('CmnaDest', n.destino?.comuna, 20) +
+    tag('CiudadDest', n.destino?.ciudad, 20) +
+    tag('FchSalida', n.fechaSalida) +
+    tag('HraSalida', n.horaSalida) +
+    tag('FchLlegada', n.fechaLlegada);
+  return cuerpo ? `<Transporte>${cuerpo}</Transporte>` : '';
 }
 
 /** `RUTProvSW`: solo boletas; va entre `Receptor` y `Totales` en `EnvioBOLETA_v11.xsd`. */
@@ -331,7 +402,20 @@ function xmlTotales(doc: DocumentoDte, tot: TotalesDte): string {
   return s + tag('MntTotal', tot.mntTotal) + '</Totales>';
 }
 
-function xmlDetalle(doc: DocumentoDte, tot: TotalesDte): string {
+/** `DscItem`: descripción + peso/volumen del ítem + (primera línea) nota del traslado, sin cortar la nota. */
+function descripcionLinea(l: DetalleDte, nota: string | undefined): string | undefined {
+  const partes = [
+    l.descripcion?.trim(),
+    l.peso ? `Peso: ${numeroXml(l.peso.valor)} ${l.peso.unidad}.` : undefined,
+    l.volumen ? `Volumen: ${numeroXml(l.volumen.valor)} ${l.volumen.unidad}.` : undefined,
+  ].filter((p): p is string => !!p);
+  const base = partes.join(' ');
+  if (!nota) return base || undefined;
+  const lugar = Math.max(0, 1000 - nota.length - 1);
+  return [truncar(base, lugar), nota].filter(Boolean).join(' ');
+}
+
+function xmlDetalle(doc: DocumentoDte, tot: TotalesDte, nota?: string): string {
   const todoExento = esTipoExento(doc.idDoc.tipoDte);
   return doc.detalle
     .map((l, i) => {
@@ -348,8 +432,8 @@ function xmlDetalle(doc: DocumentoDte, tot: TotalesDte): string {
         (cod ? `<CdgItem>${tag('TpoCodigo', cod.tipo, 10)}${tag('VlrCodigo', cod.valor, 35)}</CdgItem>` : '') +
         (exento ? '<IndExe>1</IndExe>' : '') +
         tag('NmbItem', l.nombre, 80) +
-        tag('DscItem', l.descripcion, 1000) +
-        tag('QtyItem', numeroXml(l.cantidad)) +
+        tag('DscItem', descripcionLinea(l, i === 0 ? nota : undefined), 1000) +
+        (l.cantidad === undefined ? '' : tag('QtyItem', numeroXml(l.cantidad))) +
         tag('UnmdItem', l.unidad, 4) +
         (l.precioUnitario > 0 ? tag('PrcItem', numeroXml(l.precioUnitario)) : '') +
         tag('DescuentoPct', l.descuentoPorcentaje === undefined ? undefined : numeroXml(l.descuentoPorcentaje, 2)) +
@@ -390,6 +474,7 @@ function xmlReferencias(doc: DocumentoDte): string {
         tag('TpoDocRef', r.tipoDocRef, 3) +
         (!boleta && r.indGlobal ? '<IndGlobal>1</IndGlobal>' : '') +
         tag('FolioRef', String(r.folioRef), 18) +
+        (boleta ? '' : tag('RUTOtr', r.rutOtroContribuyente?.replace(/\./g, '').toUpperCase())) +
         (boleta ? '' : tag('FchRef', r.fechaRef)) +
         tag('CodRef', r.codRef) +
         tag('RazonRef', r.razonRef, 90) +
@@ -413,7 +498,12 @@ function xmlReferencias(doc: DocumentoDte): string {
  */
 export function construirDte(doc: DocumentoDte, opciones: OpcionesConstruirDte): DteConstruido {
   const { caf, certificado } = opciones;
-  validarDocumento(doc, caf, opciones.validarVigenciaCaf ?? true);
+  const traslado = validarDocumento(
+    doc,
+    caf,
+    opciones.validarVigenciaCaf ?? true,
+    opciones.permitirIndTrasladoRes144 ?? false,
+  );
   const totales = calcularTotales(doc);
   const tipo = doc.idDoc.tipoDte;
   const boleta = esBoleta(tipo);
@@ -443,12 +533,13 @@ export function construirDte(doc: DocumentoDte, opciones: OpcionesConstruirDte):
     `<Documento ID="${idDocumento}">` +
     '<Encabezado>' +
     xmlIdDoc(doc) +
-    xmlEmisor(doc.emisor, boleta) +
+    xmlEmisor(doc.emisor, boleta, traslado) +
     xmlReceptor(doc.receptor, boleta) +
+    xmlTransporte(traslado) +
     xmlProveedorSw(doc) +
     xmlTotales(doc, totales) +
     '</Encabezado>' +
-    xmlDetalle(doc, totales) +
+    xmlDetalle(doc, totales, traslado?.nota) +
     xmlDescuentosRecargos(doc, totales) +
     xmlReferencias(doc) +
     ted +
@@ -456,5 +547,5 @@ export function construirDte(doc: DocumentoDte, opciones: OpcionesConstruirDte):
     '</Documento></DTE>';
 
   const xmlFirmado = firmarXml(xml, { ...certificado, idReferencia: idDocumento });
-  return { xmlFirmado, xmlIso: aIso88591(xmlFirmado), ted, idDocumento, totales };
+  return { xmlFirmado, xmlIso: aIso88591(xmlFirmado), ted, idDocumento, totales, ...(traslado ? { traslado } : {}) };
 }

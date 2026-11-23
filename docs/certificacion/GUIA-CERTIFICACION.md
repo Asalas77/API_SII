@@ -190,6 +190,38 @@ El plazo mostrado antes de `consultar-sii` es una **estimación** (recepción pr
 
 **Libro de compras desde lo recibido:** `POST $B/empresas/$E/libros/compras` con `{"periodo":"2026-11","desdeRecibidos":true}` arma el detalle con los DTE recibidos **aceptados** (con o sin reparos) cuya fecha de emisión cae en el período (las guías 52 se omiten: van en su libro). La entrada con `documentos` (sección 7) sigue funcionando; no se pueden mezclar.
 
+## 9b. Guías de despacho con datos de traslado (Res. Ex. SII 144/2026)
+
+El set de pruebas del SII no trae datos de transporte, así que las guías del set se emiten sin bloque `traslado`. Para las guías reales (vigentes desde el 2026-11-01) use el bloque `traslado`; `$B` y `$K` como arriba:
+
+```bash
+# Autogestionada: todos los datos (origen por defecto = dirección de la empresa)
+curl -H "$K" -X POST $B/empresas/76086428-5/documentos -H 'content-type: application/json' -d '{
+  "idDoc": {"tipoDte": 52, "indTraslado": 1},
+  "receptor": {"rut": "12345678-5", "razonSocial": "CLIENTE LTDA", "giro": "Comercio", "direccion": "Calle Falsa 123", "comuna": "Santiago"},
+  "detalle": [{"nombre": "Cemento 25 kg", "cantidad": 10, "unidad": "UN", "precioUnitario": 5000, "peso": {"valor": 250, "unidad": "KG"}}],
+  "traslado": {"categoria": "autogestionado",
+    "destino": {"direccion": "Los Leones 99", "comuna": "Ñuñoa", "ciudad": "Santiago"},
+    "fechaSalida": "2026-11-23", "horaSalida": "09:30",
+    "transportista": {"rut": "76543210-3"}, "chofer": {"rut": "11222333-9", "nombre": "Juan Pérez Soto"},
+    "patente": "BCDF12", "patenteCarro": "AB1234"}}'
+
+# Tercerizada: lo que no se conoce se informa Diferido; la guía queda trasladoPendiente=true
+#   ... "traslado": {"categoria": "tercerizado", "destino": {...},
+#        "diferido": ["transportista","choferRut","choferNombre","patente","fechaSalida"]}
+
+# Listar las pendientes y complementarlas con una guía posterior que referencia a la original
+curl -H "$K" "$B/empresas/76086428-5/documentos?trasladoPendiente=true"
+curl -H "$K" -X POST $B/documentos/<id>/complementar-traslado -H 'content-type: application/json' -d '{
+  "traslado": {"transportista": {"rut": "76543210-3"}, "chofer": {"rut": "11222333-9", "nombre": "Juan Pérez Soto"},
+               "patente": "BCDF12", "fechaSalida": "2026-11-23"}}'
+
+# Factura retirada por el comprador (sin datos de transporte)
+#   ... {"idDoc": {"tipoDte": 33}, ..., "traslado": {"retiroComprador": true}}
+```
+
+`IndTraslado` 10 (GDT), 11 y 12 responden 422 mientras `PERMITIR_INDTRASLADO_RES144=false` (el XSD oficial del SII aún no los enumera; ver `apps/api/src/dte-core/README.md`). La guía reemplazada debe anularse a mano en el Registro de Guías de Despacho del sitio del SII.
+
 ## 9. Qué sigue
 
 1. **Simulación**: el SII pide emitir documentos de un "set de simulación" con datos propios del contribuyente (mismo flujo, vía `POST /documentos` y `POST /envios`).

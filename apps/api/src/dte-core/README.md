@@ -101,7 +101,43 @@ Libros contables (CAL/COCERTIF), liquidaciones y liquidaciones-factura (`Liquida
 
 ### Pendientes
 
-Guía de despacho con datos de traslado (Res. 144/2026: `Transporte`, `IndTraslado` ampliado), exportación, liquidaciones, factura de compra (46), retenciones y `IVANoRet`, `SubTotInfo`, `Comisiones`, `OtraMoneda`, ítem espectáculo/`InfoTicket` de boletas.
+Exportación, liquidaciones, factura de compra (46), retenciones y `IVANoRet`, `SubTotInfo`, `Comisiones`, `OtraMoneda`, ítem espectáculo/`InfoTicket` de boletas.
+
+## Res. Ex. SII 144/2026: guías y facturas que amparan traslado
+
+Vigente desde el 2026-11-01 (GDT y ATT opcionales hasta el 2027-05-01). Código: `documento/traslado.ts` (validación y normalización, pura) y `construir-dte.ts` (XML). Pruebas: `documento/traslado.spec.ts`. Documentación oficial consultada: `docs/referencias-sii/README.md` (sección "Res. Ex. 144/2026").
+
+### Estado del XSD oficial (2026-11-22)
+
+El `DTE_v10.xsd` vigente del SII (2026-02-19, idéntico al que se descarga hoy de `.../factura_mercado/schema_dte.zip`) **solo enumera `IndTraslado` 1 a 9**. Sí trae, en el lugar correcto, `Transporte` (`Patente` y `PatenteCarro` texto de hasta 8, `RUTTrans` tipo RUT, `Chofer` con `RUTChofer` tipo RUT y `NombreChofer` de hasta 30, `DirDest`, `CmnaDest`, `CiudadDest`, `Aduana`, `FchSalida`, `HraSalida`, `FchLlegada`) entre `Receptor` y `Totales`, y `RUTOtr` en `Referencia` (entre `FolioRef` y `FchRef`). El formato v2.5 (2026-02) cita la Res. 154/2025, no la 144. **No hay XSD ni manual publicados para `IndTraslado` 10-12, para "Diferido"/"Sin Dato" ni para el ATT.** Por eso:
+
+- `IndTraslado` 10 (GDT), 11 y 12 están implementados pero **deshabilitados** (`PERMITIR_INDTRASLADO_RES144=false` por defecto; opción `permitirIndTrasladoRes144` de `construirDte`): rechazo 422 con `errors[0].campo = idDoc.indTraslado` y la explicación. Con `true` el XML se arma, pero no valida contra el XSD vigente (la prueba `traslado.spec.ts` lo fija: el único error es `IndTraslado`) y el SII lo rechazaría hasta que publique el XSD; entonces basta reemplazar `resources/sii/xsd` y activar la variable.
+- Falta (no inventado): XSD con 10-12, representación oficial de "Diferido"/"Sin Dato" en campos tipo RUT/fecha, formato del ATT (resolutivo 10°) y el mapeo `IndTraslado` -> `TpoOper` del libro de guías para 8-12 (el formato del libro solo define 1 a 7; ver `libros-desde-documentos.ts`).
+
+### Bloque `traslado` (`DocumentoDte.traslado`)
+
+`categoria` (`autogestionado` | `tercerizado` | `regimen_especial`), `origen` (por defecto la dirección del emisor; va a `Emisor/DirOrigen`/`CmnaOrigen`), `destino`, `fechaSalida`, `horaSalida?`, `fechaLlegada?`, `transportista.rut`, `chofer {rut, nombre}`, `patente`, `patenteCarro?`, `diferido[]`/`sinDato[]` (campos: `transportista`, `choferRut`, `choferNombre`, `patente`, `patenteCarro`, `fechaSalida`), `retiroComprador`, `descripcionProlongado`, `motivoSinPrecio`. Además `idDoc.indTraslado` (1 a 12), `DetalleDte.peso`/`volumen` (el formato no tiene campo por ítem: van en `DscItem`) y `ReferenciaDte.rutOtroContribuyente` (`RUTOtr`). Sin bloque `traslado` el documento se emite como antes (necesario para el set de certificación, que no trae datos de transporte).
+
+### Reglas (`normalizarTraslado`; errores en español con el campo, p. ej. `traslado.chofer.rut: ...`)
+
+- Solo 33, 34 y 52 (no boletas: resolutivo 14°; no notas). `categoria` e `idDoc.indTraslado` (en guías) obligatorios.
+- **autogestionado**: transportista, RUT y nombre del chofer, patente y fecha de salida, origen y destino obligatorios; no admite diferido/sinDato.
+- **tercerizado**: cada uno de los cinco datos anteriores se informa o se marca diferido/sinDato; origen y destino obligatorios. Informar un valor y marcarlo a la vez es error.
+- **regimen_especial** (resolutivo 11°): basta fecha de emisión, tipo de traslado, dirección de origen y la descripción del ítem. La excepción no vale fuera de zona primaria: no es verificable aquí.
+- **retiroComprador** (resolutivo 15°): solo facturas, sin ningún dato de transporte.
+- **GDT (`indTraslado` 10)**: categoría tercerizado, al menos una referencia a un documento tributario (idealmente con `rutOtroContribuyente`), cantidad y precio del ítem opcionales (detalle mínimo; resolutivo 6°). `cantidad` solo se puede omitir aquí.
+- **11/12**: `fechaLlegada` (no anterior a la salida) y `descripcionProlongado` obligatorios.
+- **Precio** (guías): 1, 2, 3, 9 y 11 llevan precio; 4-8 y 12 pueden omitirlo con `motivoSinPrecio`.
+- `rutOtroContribuyente`: RUT válido, distinto del emisor, solo si `tipoDocRef` es tributario (`TIPOS_DOC_TRIBUTARIOS`, SUPUESTO).
+- Formatos: RUT con DV y cuerpo entre 100.000 y 99 millones (formato DTE v2.5); nombre del chofer hasta 30 caracteres (error, no se trunca); patente normalizada (mayúsculas, sin espacios/puntos/guiones) con patrón `AB1234`, `BCDF12`, `ABC12`, `ABC123` o `AB123` (SUPUESTO: el SII solo fija "texto de hasta 8"); fechas entre 2003-04-01 y 2050-12-31; hora `HH:MM[:SS]`.
+
+### "Diferido" / "Sin Dato" (resolutivo 4°; SUPUESTO, sin respaldo oficial del formato)
+
+`Patente`, `PatenteCarro` y `NombreChofer` son texto en el XSD y llevan el literal `Diferido` o `Sin Dato`. `RUTTrans`, `RUTChofer` (y por tanto todo `Chofer`, que exige RUT) y `FchSalida` no admiten texto: el elemento se omite. En todos los casos se agrega a `DscItem` de la primera línea "Datos de traslado pendientes (Res. Ex. SII 144/2026): RUT chofer: DIFERIDO; ..." para dejar constancia expresa en el documento; la representación impresa lee ese texto. El traslado queda `pendiente` (`traslado_pendiente`) y se completa con una guía posterior que lo referencia, una GDT o el ATT (`POST /v1/documentos/{id}/complementar-traslado`, ver `src/documentos/README.md`). Lo mismo con el traslado prolongado ("Traslado prolongado: ... Fecha estimada de llegada: ...") y el motivo de la ausencia de precio ("Sin precio unitario: ..."), que se agregan a `DscItem`.
+
+### No cubierto
+
+Registro de Guías de Despacho (anular una guía reemplazada: es manual en el sitio del SII, no hay web service en el alcance), informar el modelo operacional de transporte (resolutivo 16°, aplicativo web del SII), excepciones de courier/postales (resolutivo 12°) y el envío del ATT.
 
 ## Probar
 

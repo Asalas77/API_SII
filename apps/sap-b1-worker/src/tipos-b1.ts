@@ -68,6 +68,15 @@ export interface DocumentoB1 {
   /** Descuento de cabecera (%). */
   DiscountPercent?: number | null;
   Comments?: string | null;
+  /** Dirección de entrega (texto libre) de la guía. */
+  Address2?: string | null;
+  /** Dirección de entrega estructurada (`ShipTo*`); en Chile `ShipToCounty` es la comuna (supuesto). */
+  AddressExtension?: {
+    ShipToStreet?: string | null;
+    ShipToStreetNo?: string | null;
+    ShipToCity?: string | null;
+    ShipToCounty?: string | null;
+  } | null;
   AttachmentEntry?: number | null;
   DocumentLines: LineaB1[];
   U_SII_TipoDTE?: string | null;
@@ -80,7 +89,22 @@ export interface DocumentoB1 {
   U_SII_PdfUrl?: string | null;
   U_SII_IdemKey?: string | null;
   U_SII_IndTraslado?: string | null;
+  /** OBSOLETO (texto libre): se reemplaza por los UDF estructurados de traslado (Res. Ex. SII 144/2026). */
   U_SII_Transporte?: string | null;
+  /** AUTOGESTIONADO | TERCERIZADO | REGIMEN_ESPECIAL. */
+  U_SII_CatTraslado?: string | null;
+  U_SII_DirOrigen?: string | null;
+  U_SII_CmnaOrigen?: string | null;
+  U_SII_RutTrans?: string | null;
+  U_SII_RutChofer?: string | null;
+  U_SII_NomChofer?: string | null;
+  U_SII_Patente?: string | null;
+  U_SII_PatenteCarro?: string | null;
+  /** Fecha (`yyyy-mm-dd`, se toman los 10 primeros caracteres). */
+  U_SII_FchSalida?: string | null;
+  /** `HH:MM` o `HH:MM:SS`. */
+  U_SII_HraSalida?: string | null;
+  U_SII_FchLlegada?: string | null;
   U_SII_CodRef?: string | null;
   U_SII_RazonRef?: string | null;
   U_SII_TipoDocRef?: string | null;

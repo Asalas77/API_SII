@@ -65,6 +65,7 @@ export function aProblema(e: unknown): Problema {
       code: 'DOCUMENTO_INVALIDO',
       title: 'Documento inválido',
       detail: e.message,
+      ...(e.campo ? { errors: [{ campo: e.campo, mensaje: e.message }] } : {}),
     };
   }
   if (e instanceof SiiEnvioDteError || e instanceof SiiPeticionInvalidaError) {

@@ -1,5 +1,6 @@
 import { XMLParser } from 'fast-xml-parser';
 import iconv from 'iconv-lite';
+import { extraerMarcadoresNota, type CampoTraslado } from '../dte-core/documento/traslado.js';
 
 /** Tipos soportados por la representación impresa. */
 export type TipoImpresion = 33 | 34 | 39 | 41 | 52 | 56 | 61;
@@ -107,6 +108,22 @@ export interface TotalesImpresion {
   total: number;
 }
 
+/** Datos de traslado (Res. Ex. SII 144/2026) leídos de `Transporte` y de la nota del detalle. */
+export interface TrasladoImpresion {
+  origen?: string;
+  destino?: string;
+  choferNombre?: string;
+  choferRut?: string;
+  rutTransportista?: string;
+  patente?: string;
+  patenteCarro?: string;
+  fechaSalida?: string;
+  horaSalida?: string;
+  fechaLlegada?: string;
+  /** Campos informados como "Diferido" o "Sin Dato" (literal del XML o nota del detalle). */
+  marcadores: Partial<Record<CampoTraslado, 'Diferido' | 'Sin Dato'>>;
+}
+
 export interface DatosImpresion {
   tipo: TipoImpresion;
   nombreDocumento: string;
@@ -116,8 +133,10 @@ export interface DatosImpresion {
   fechaVencimiento?: string;
   /** Facturas: 1 contado, 2 crédito, 3 sin costo. */
   formaPago?: number;
-  /** Guías: tipo de traslado (1 a 9). */
+  /** Guías: tipo de traslado (1 a 12). */
   indTraslado?: number;
+  /** Presente si el documento trae `Transporte` o datos diferidos. */
+  traslado?: TrasladoImpresion;
   emisor: PersonaImpresion & { actecos: number[]; sucursalSii?: number };
   receptor: PersonaImpresion;
   detalle: LineaImpresion[];
@@ -208,6 +227,46 @@ function persona(rut: unknown, o: CamposPersona): PersonaImpresion {
   };
 }
 
+const LITERAL_MARCADOR = /^(diferido|sin dato)$/i;
+
+function marcadorDeLiteral(v: string | undefined): 'Diferido' | 'Sin Dato' | undefined {
+  if (!v || !LITERAL_MARCADOR.test(v)) return undefined;
+  return v.toLowerCase() === 'diferido' ? 'Diferido' : 'Sin Dato';
+}
+
+function direccionTraslado(dir: unknown, comuna: unknown, ciudad?: unknown): string | undefined {
+  const partes = [texto(dir), texto(comuna), texto(ciudad)].filter((x): x is string => !!x);
+  return partes.length > 0 ? [...new Set(partes)].join(', ') : undefined;
+}
+
+function extraerTraslado(tr: Nodo, emisor: Nodo, dscPrimerItem: string | undefined): TrasladoImpresion | undefined {
+  const marcadores = extraerMarcadoresNota(dscPrimerItem);
+  if (Object.keys(tr).length === 0 && Object.keys(marcadores).length === 0) return undefined;
+  const chofer = nodo(tr.Chofer);
+  const patente = texto(tr.Patente);
+  const carro = texto(tr.PatenteCarro);
+  const nombre = texto(chofer.NombreChofer);
+  const mPatente = marcadorDeLiteral(patente);
+  const mCarro = marcadorDeLiteral(carro);
+  const mNombre = marcadorDeLiteral(nombre);
+  if (mPatente) marcadores.patente = mPatente;
+  if (mCarro) marcadores.patenteCarro = mCarro;
+  if (mNombre) marcadores.choferNombre = mNombre;
+  return {
+    origen: direccionTraslado(emisor.DirOrigen, emisor.CmnaOrigen),
+    destino: direccionTraslado(tr.DirDest, tr.CmnaDest, tr.CiudadDest),
+    choferNombre: mNombre ? undefined : nombre,
+    choferRut: texto(chofer.RUTChofer) ? rutConPuntos(texto(chofer.RUTChofer)!) : undefined,
+    rutTransportista: texto(tr.RUTTrans) ? rutConPuntos(texto(tr.RUTTrans)!) : undefined,
+    patente: mPatente ? undefined : patente,
+    patenteCarro: mCarro ? undefined : carro,
+    fechaSalida: texto(tr.FchSalida),
+    horaSalida: texto(tr.HraSalida),
+    fechaLlegada: texto(tr.FchLlegada),
+    marcadores,
+  };
+}
+
 /**
  * Parsea un DTE firmado (o el DTE número `indice` de un sobre EnvioDTE/EnvioBOLETA) y devuelve el modelo
  * necesario para imprimirlo. Acepta string (ya decodificado) o Buffer (se decodifica según la declaración XML,
@@ -275,6 +334,8 @@ export function extraerDatosImpresion(xml: string | Buffer, indice = 0): DatosIm
     };
   });
 
+  const traslado = extraerTraslado(nodo(enc.Transporte), em, detalle[0]?.descripcion);
+
   return {
     tipo: tipo as TipoImpresion,
     nombreDocumento: NOMBRES_DOCUMENTO[tipo as TipoImpresion],
@@ -283,6 +344,7 @@ export function extraerDatosImpresion(xml: string | Buffer, indice = 0): DatosIm
     fechaVencimiento: texto(idDoc.FchVenc),
     formaPago: numero(idDoc.FmaPago),
     indTraslado: numero(idDoc.IndTraslado),
+    ...(traslado ? { traslado } : {}),
     emisor: {
       ...persona(em.RUTEmisor, {
         razon: em.RznSoc ?? em.RznSocEmisor,

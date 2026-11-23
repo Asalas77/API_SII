@@ -45,8 +45,15 @@ Campos creados (prefijo `U_`; se crean en `OINV`, `ORIN` y `ODLN` salvo que se i
 | `U_SII_DocId` | Alfa 36 | Worker | UUID del documento en la API |
 | `U_SII_XmlUrl`, `U_SII_PdfUrl` | Alfa 254 | Worker | URLs de la API (requieren la API key para descargar) |
 | `U_SII_IdemKey` | Alfa 100 | Worker | Idempotency-Key usada |
-| `U_SII_IndTraslado` | Alfa 1 | Usuario | Sólo `ODLN`: indicador de traslado 1 a 9 (obligatorio en guías) |
-| `U_SII_Transporte` | Alfa 254 | Usuario | Sólo `ODLN`: texto libre; viaja en `origen.transporte` (la API aún no tiene el bloque de transporte) |
+| `U_SII_IndTraslado` | Alfa 2, valores 1 a 12 | Usuario | Sólo `ODLN`: tipo de traslado (Anexo Res. Ex. SII 144/2026; obligatorio en guías). 10 (GDT) no se emite desde B1; 10-12 los rechaza la API mientras `PERMITIR_INDTRASLADO_RES144=false` (el XSD oficial aún no los enumera). Si ya había creado el campo con tamaño 1, amplíelo a 2 a mano en B1 (el instalador no modifica campos existentes) |
+| `U_SII_Transporte` | Alfa 254 | Usuario | **OBSOLETO** (sólo `ODLN`): texto libre que viaja en `origen.transporte`. No reemplaza los UDF estructurados de abajo; se conserva por compatibilidad |
+| `U_SII_CatTraslado` | Alfa 20: `AUTOGESTIONADO`, `TERCERIZADO`, `REGIMEN_ESPECIAL` | Usuario | Sólo `ODLN`: categoría de la Res. 144. Vacío = la guía se emite sin bloque `traslado` (con advertencia) |
+| `U_SII_DirOrigen`, `U_SII_CmnaOrigen` | Alfa 70 / 20 | Usuario | Sólo `ODLN`: origen efectivo (opcionales, se informan juntos; por defecto la dirección de la empresa) |
+| `U_SII_RutTrans`, `U_SII_RutChofer` | Alfa 12 | Usuario | Sólo `ODLN`: RUT del transportista y del chofer (se valida el DV) |
+| `U_SII_NomChofer` | Alfa 30 | Usuario | Sólo `ODLN`: nombre completo del chofer |
+| `U_SII_Patente`, `U_SII_PatenteCarro` | Alfa 10 | Usuario | Sólo `ODLN`: patente del vehículo y del carro/remolque |
+| `U_SII_FchSalida`, `U_SII_FchLlegada` | Fecha | Usuario | Sólo `ODLN`: inicio efectivo del traslado y llegada (estimada obligatoria en 11/12) |
+| `U_SII_HraSalida` | Alfa 8 | Usuario | Sólo `ODLN`: `HH:MM` o `HH:MM:SS` (opcional) |
 | `U_SII_CodRef` | Alfa 1 | Usuario | `OINV`/`ORIN`: código de referencia de notas 1/2/3 (3 por defecto) |
 | `U_SII_RazonRef` | Alfa 90 | Usuario | `OINV`/`ORIN`: razón de la referencia |
 | `U_SII_TipoDocRef`, `U_SII_FolioRef` | Alfa 3 / 18 | Usuario | `OINV`/`ORIN`: referencia manual cuando la nota no se creó copiando de un documento base |
@@ -128,10 +135,17 @@ Un documento en `ERROR` por `IDEMPOTENCIA_CONFLICTO` significa que ese documento
 - **Descuento de cabecera** (`DiscountPercent`) → `descuentosRecargos`; en documentos mixtos se emiten dos descuentos (afecto y exento).
 - **Pago**: `PaymentGroupCode ∈ B1_GRUPOS_PAGO_CONTADO` → contado (1), otro → crédito (2); `DocDueDate` como vencimiento. No se informa en boletas ni guías.
 - **Notas 61/56**: documento base por `BaseType/BaseEntry` de las líneas; se lee su `U_SII_Folio`, `U_SII_TipoDTE` y fecha. Sin folio en el base → `ERROR` con mensaje claro (emita primero el base). `codRef` de `U_SII_CodRef` (3 por defecto).
-- **Guía 52**: `U_SII_IndTraslado` obligatorio.
-- `origen` lleva `{ sistema: 'SAP_B1', objType, docEntry, docNum }` (y `transporte` en guías) para correlación.
+- **Guía 52**: `U_SII_IndTraslado` obligatorio (1 a 12; 10 se rechaza). Con `U_SII_CatTraslado` arma el bloque `traslado` de la API (Res. Ex. SII 144/2026):
+  - el **destino** sale de la dirección de entrega del documento (`AddressExtension.ShipToStreet` + `ShipToStreetNo`, `ShipToCounty` como comuna y `ShipToCity`; si faltan, la primera línea de `Address2` sin comuna, que no basta): es error en autogestionado/tercerizado si no hay calle y comuna;
+  - `AUTOGESTIONADO`: todos los UDF de transporte (salvo `U_SII_PatenteCarro`) son obligatorios;
+  - `TERCERIZADO`: lo vacío (RUT transportista, RUT/nombre del chofer, patente, fecha de salida) se informa como **diferido**; escribir `DIFERIDO` o `SIN DATO` en un UDF de texto lo fuerza. La guía queda `trasladoPendiente` en la API y se completa con `POST /v1/documentos/{id}/complementar-traslado`;
+  - `REGIMEN_ESPECIAL`: sólo lo que haya; no exige destino ni transporte;
+  - 11/12: `U_SII_FchLlegada` y `Comments` (se envía como `descripcionProlongado`) obligatorios;
+  - guías no venta (4-8, 12) con líneas sin precio: `motivoSinPrecio` = `Comments` o, si está vacío, la descripción del tipo de traslado.
+  El mapeo del worker manda: la API repite las validaciones de fondo y sus errores quedan en `U_SII_Glosa`.
+- `origen` lleva `{ sistema: 'SAP_B1', objType, docEntry, docNum }` (y `transporte`, obsoleto, en guías) para correlación.
 
-No mapeado todavía: impuestos adicionales/específicos, retenciones, boletas por medio de pago (`medioPago`), referencias en facturas copiadas desde guías, proveedor de software de boletas y bloque de transporte de la guía (dependen de la API/`dte-core`).
+No mapeado todavía: impuestos adicionales/específicos, retenciones, boletas por medio de pago (`medioPago`), referencias en facturas copiadas desde guías, proveedor de software de boletas, retiro por el comprador en facturas, guía tercerizada (GDT, `IndTraslado` 10) y peso/volumen por ítem.
 
 ## Solución de problemas
 

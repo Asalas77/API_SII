@@ -12,6 +12,43 @@ namespace SapB1Addon.Core.Api
         [JsonPropertyName("descuentosRecargos")] public List<CuerpoDescuentoRecargo>? DescuentosRecargos { get; set; }
         [JsonPropertyName("referencias")] public List<CuerpoReferencia>? Referencias { get; set; }
         [JsonPropertyName("origen")] public Dictionary<string, object>? Origen { get; set; }
+        [JsonPropertyName("traslado")] public CuerpoTraslado? Traslado { get; set; }
+    }
+
+    public class CuerpoDireccion
+    {
+        [JsonPropertyName("direccion")] public string Direccion { get; set; } = "";
+        [JsonPropertyName("comuna")] public string Comuna { get; set; } = "";
+        [JsonPropertyName("ciudad")] public string? Ciudad { get; set; }
+    }
+
+    public class CuerpoTransportista { [JsonPropertyName("rut")] public string Rut { get; set; } = ""; }
+
+    public class CuerpoChofer
+    {
+        [JsonPropertyName("rut")] public string? Rut { get; set; }
+        [JsonPropertyName("nombre")] public string? Nombre { get; set; }
+    }
+
+    /// <summary>Bloque <c>traslado</c> de la API (Res. Ex. SII 144/2026; ver <c>TrasladoDto</c>).</summary>
+    public class CuerpoTraslado
+    {
+        /// <summary>autogestionado | tercerizado | regimen_especial.</summary>
+        [JsonPropertyName("categoria")] public string Categoria { get; set; } = "";
+        [JsonPropertyName("origen")] public CuerpoDireccion? Origen { get; set; }
+        [JsonPropertyName("destino")] public CuerpoDireccion? Destino { get; set; }
+        [JsonPropertyName("fechaSalida")] public string? FechaSalida { get; set; }
+        [JsonPropertyName("horaSalida")] public string? HoraSalida { get; set; }
+        [JsonPropertyName("fechaLlegada")] public string? FechaLlegada { get; set; }
+        [JsonPropertyName("transportista")] public CuerpoTransportista? Transportista { get; set; }
+        [JsonPropertyName("chofer")] public CuerpoChofer? Chofer { get; set; }
+        [JsonPropertyName("patente")] public string? Patente { get; set; }
+        [JsonPropertyName("patenteCarro")] public string? PatenteCarro { get; set; }
+        /// <summary>Campos: transportista, choferRut, choferNombre, patente, patenteCarro, fechaSalida.</summary>
+        [JsonPropertyName("diferido")] public List<string>? Diferido { get; set; }
+        [JsonPropertyName("sinDato")] public List<string>? SinDato { get; set; }
+        [JsonPropertyName("descripcionProlongado")] public string? DescripcionProlongado { get; set; }
+        [JsonPropertyName("motivoSinPrecio")] public string? MotivoSinPrecio { get; set; }
     }
 
     public class CuerpoIdDoc

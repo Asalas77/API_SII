@@ -136,9 +136,9 @@ namespace SapB1Addon.Core.Tests
         }
 
         [Fact]
-        public void Guia_exige_ind_traslado_entre_1_y_9()
+        public void Guia_exige_ind_traslado_entre_1_y_12()
         {
-            foreach (var malo in new string?[] { null, "", "0", "10", "x" })
+            foreach (var malo in new string?[] { null, "", "0", "13", "x" })
             {
                 var cab = Datos.Guia();
                 cab.SiiIndTraslado = malo;

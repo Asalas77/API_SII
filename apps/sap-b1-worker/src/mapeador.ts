@@ -19,6 +19,7 @@ export interface CuerpoDocumento {
     formaPago?: 1 | 2 | 3;
     indTraslado?: number;
   };
+  traslado?: CuerpoTraslado;
   receptor?: {
     rut: string;
     razonSocial: string;
@@ -55,6 +56,50 @@ export interface CuerpoDocumento {
   }>;
   origen?: Record<string, unknown>;
 }
+
+/** Bloque `traslado` de la API (Res. Ex. SII 144/2026; ver `TrasladoDto`). */
+export interface CuerpoTraslado {
+  categoria: 'autogestionado' | 'tercerizado' | 'regimen_especial';
+  origen?: { direccion: string; comuna: string };
+  destino?: { direccion: string; comuna: string; ciudad?: string };
+  fechaSalida?: string;
+  horaSalida?: string;
+  fechaLlegada?: string;
+  transportista?: { rut: string };
+  chofer?: { rut?: string; nombre?: string };
+  patente?: string;
+  patenteCarro?: string;
+  diferido?: CampoTraslado[];
+  sinDato?: CampoTraslado[];
+  descripcionProlongado?: string;
+  motivoSinPrecio?: string;
+}
+
+export type CampoTraslado = 'transportista' | 'choferRut' | 'choferNombre' | 'patente' | 'patenteCarro' | 'fechaSalida';
+
+export const DESCRIPCION_IND_TRASLADO: Readonly<Record<number, string>> = {
+  1: 'Operación constituye venta',
+  2: 'Ventas por efectuar',
+  3: 'Consignaciones',
+  4: 'Entrega gratuita',
+  5: 'Traslados internos',
+  6: 'Otros traslados no venta',
+  7: 'Devolución de mercaderías',
+  8: 'Traslado para exportación (no venta)',
+  9: 'Venta de exportación',
+  10: 'Traslado tercerizado',
+  11: 'Traslado prolongado, importa venta',
+  12: 'Traslado prolongado, no venta',
+};
+
+const CATEGORIAS: Record<string, CuerpoTraslado['categoria']> = {
+  AUTOGESTIONADO: 'autogestionado',
+  TERCERIZADO: 'tercerizado',
+  REGIMEN_ESPECIAL: 'regimen_especial',
+};
+
+/** Tipos de traslado cuyo precio puede omitirse (no venta). */
+const IND_SIN_PRECIO = [4, 5, 6, 7, 8, 12];
 
 export type ResultadoMapeo =
   | { ok: true; cuerpo: CuerpoDocumento; tipoDte: TipoDte; advertencias: string[] }
@@ -243,6 +288,7 @@ export function mapearDocumento(entidad: EntidadB1, doc: DocumentoB1, ctx: Conte
   }
 
   const idDoc: CuerpoDocumento['idDoc'] = { tipoDte: tipo, fechaEmision };
+  let traslado: CuerpoTraslado | undefined;
 
   // Forma de pago y vencimiento (no aplican a boletas ni a guías)
   if (!boleta && tipo !== 52) {
@@ -255,10 +301,16 @@ export function mapearDocumento(entidad: EntidadB1, doc: DocumentoB1, ctx: Conte
   // Guía de despacho
   if (tipo === 52) {
     const ind = Number((doc.U_SII_IndTraslado ?? '').trim());
-    if (!Number.isInteger(ind) || ind < 1 || ind > 9) {
-      errores.push('Guía de despacho: U_SII_IndTraslado es obligatorio (1 a 9)');
+    if (!Number.isInteger(ind) || ind < 1 || ind > 12) {
+      errores.push('Guía de despacho: U_SII_IndTraslado es obligatorio (1 a 12)');
+    } else if (ind === 10) {
+      errores.push(
+        'U_SII_IndTraslado 10 (guía de despacho tercerizada, GDT) no se emite desde B1: exige referenciar el documento original y el XSD oficial del SII aún no la enumera',
+      );
     } else {
       idDoc.indTraslado = ind;
+      const t = mapearTraslado(doc, ind, detalle.some((d) => !(d.precioUnitario > 0)), errores, advertencias);
+      if (t) traslado = t;
     }
   }
 
@@ -289,16 +341,137 @@ export function mapearDocumento(entidad: EntidadB1, doc: DocumentoB1, ctx: Conte
     docEntry: doc.DocEntry,
     ...(doc.DocNum !== undefined ? { docNum: doc.DocNum } : {}),
   };
+  // OBSOLETO: U_SII_Transporte (texto libre) se conserva solo como metadato; los datos viajan en `traslado`.
   const transporte = trunc(doc.U_SII_Transporte, 254);
   if (tipo === 52 && transporte) origen['transporte'] = transporte;
 
   if (errores.length > 0) return { ok: false, errores };
 
   const cuerpo: CuerpoDocumento = { idDoc, detalle, origen };
+  if (traslado) cuerpo.traslado = traslado;
   if (receptor) cuerpo.receptor = receptor;
   if (descuentosRecargos?.length) cuerpo.descuentosRecargos = descuentosRecargos;
   if (referencias?.length) cuerpo.referencias = referencias;
   return { ok: true, cuerpo, tipoDte: tipo, advertencias };
+}
+
+/** Valor de un UDF de texto: vacío, "DIFERIDO" o "SIN DATO" (cualquier caso) o el dato. */
+function valorUdf(v: string | null | undefined): { dato?: string; marca?: 'diferido' | 'sinDato' } {
+  const t = (v ?? '').trim();
+  if (!t) return {};
+  if (/^diferido$/i.test(t)) return { marca: 'diferido' };
+  if (/^sin\s*dato$/i.test(t)) return { marca: 'sinDato' };
+  return { dato: t };
+}
+
+/**
+ * Arma el bloque `traslado` de la guía desde los UDF estructurados de `ODLN` (Res. Ex. SII 144/2026). Sin
+ * `U_SII_CatTraslado` no hay bloque (la guía se emite como antes, con advertencia). En `TERCERIZADO` los campos
+ * de transporte vacíos se informan como diferidos; "DIFERIDO"/"SIN DATO" escritos en el UDF los fuerzan.
+ * El destino sale de la dirección de entrega del documento. La API repite las validaciones de fondo.
+ */
+function mapearTraslado(
+  doc: DocumentoB1,
+  ind: number,
+  hayLineaSinPrecio: boolean,
+  errores: string[],
+  advertencias: string[],
+): CuerpoTraslado | undefined {
+  const crudo = (doc.U_SII_CatTraslado ?? '').trim().toUpperCase();
+  if (!crudo) {
+    advertencias.push(
+      'Guía sin U_SII_CatTraslado: se emite sin datos de traslado (Res. Ex. SII 144/2026 los exige desde el 2026-11-01)' +
+        ((doc.U_SII_Transporte ?? '').trim() ? '; U_SII_Transporte está obsoleto y no reemplaza a los UDF estructurados' : ''),
+    );
+    return undefined;
+  }
+  const categoria = CATEGORIAS[crudo];
+  if (!categoria) {
+    errores.push(`U_SII_CatTraslado "${crudo}" inválido (${Object.keys(CATEGORIAS).join(', ')})`);
+    return undefined;
+  }
+  const erroresAntes = errores.length;
+  const t: CuerpoTraslado = { categoria };
+  const diferido: CampoTraslado[] = [];
+  const sinDato: CampoTraslado[] = [];
+  const aplicar = (campo: CampoTraslado, v: { dato?: string; marca?: 'diferido' | 'sinDato' }, udf: string): string | undefined => {
+    if (v.marca === 'diferido') diferido.push(campo);
+    else if (v.marca === 'sinDato') sinDato.push(campo);
+    else if (v.dato === undefined) {
+      if (categoria === 'tercerizado') diferido.push(campo);
+      else if (categoria === 'autogestionado' && campo !== 'patenteCarro') errores.push(`${udf} es obligatorio en el transporte autogestionado`);
+    }
+    return v.dato;
+  };
+  const rutUdf = (v: string | undefined, udf: string): string | undefined => {
+    if (v === undefined) return undefined;
+    const n = normalizarRut(v);
+    if (!n) errores.push(`${udf} inválido (dígito verificador o formato): "${v}"`);
+    return n ?? undefined;
+  };
+
+  // Origen (opcional: por defecto la API usa la dirección de la empresa).
+  const dirOrigen = trunc(doc.U_SII_DirOrigen, 70);
+  const cmnaOrigen = trunc(doc.U_SII_CmnaOrigen, 20);
+  if (dirOrigen || cmnaOrigen) {
+    if (dirOrigen && cmnaOrigen) t.origen = { direccion: dirOrigen, comuna: cmnaOrigen };
+    else errores.push('U_SII_DirOrigen y U_SII_CmnaOrigen se informan juntos');
+  }
+
+  // Destino: dirección de entrega del documento.
+  const ext = doc.AddressExtension ?? undefined;
+  const calle = [ext?.ShipToStreet, ext?.ShipToStreetNo].map((s) => (s ?? '').trim()).filter(Boolean).join(' ');
+  const direccion = (calle || trunc(doc.Address2?.split(/\r?\n/)[0], 70)).slice(0, 70);
+  const comuna = trunc(ext?.ShipToCounty, 20);
+  const ciudad = trunc(ext?.ShipToCity, 20);
+  if (direccion && comuna) t.destino = { direccion, comuna, ...(ciudad ? { ciudad } : {}) };
+  else if (categoria !== 'regimen_especial') {
+    errores.push('La guía no tiene dirección de entrega completa (calle y comuna: AddressExtension.ShipToStreet y ShipToCounty) para el destino del traslado');
+  }
+
+  const rutTrans = rutUdf(aplicar('transportista', valorUdf(doc.U_SII_RutTrans), 'U_SII_RutTrans'), 'U_SII_RutTrans');
+  if (rutTrans) t.transportista = { rut: rutTrans };
+  const rutChofer = rutUdf(aplicar('choferRut', valorUdf(doc.U_SII_RutChofer), 'U_SII_RutChofer'), 'U_SII_RutChofer');
+  const nombre = aplicar('choferNombre', valorUdf(doc.U_SII_NomChofer), 'U_SII_NomChofer');
+  if (nombre && nombre.length > 30) errores.push(`U_SII_NomChofer admite hasta 30 caracteres (tiene ${nombre.length})`);
+  if (rutChofer || nombre) t.chofer = { ...(rutChofer ? { rut: rutChofer } : {}), ...(nombre ? { nombre } : {}) };
+  const patente = aplicar('patente', valorUdf(doc.U_SII_Patente), 'U_SII_Patente');
+  if (patente) t.patente = patente;
+  const carro = aplicar('patenteCarro', valorUdf(doc.U_SII_PatenteCarro), 'U_SII_PatenteCarro');
+  if (carro) t.patenteCarro = carro;
+
+  const fchSalida = fecha(doc.U_SII_FchSalida);
+  if (fchSalida) {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(fchSalida)) t.fechaSalida = fchSalida;
+    else errores.push(`U_SII_FchSalida inválida ("${doc.U_SII_FchSalida}")`);
+  } else if (categoria === 'tercerizado') diferido.push('fechaSalida');
+  else if (categoria === 'autogestionado') errores.push('U_SII_FchSalida es obligatorio en el transporte autogestionado');
+  const hora = trunc(doc.U_SII_HraSalida, 8);
+  if (hora) {
+    if (/^\d{2}:\d{2}(:\d{2})?$/.test(hora)) t.horaSalida = hora;
+    else errores.push(`U_SII_HraSalida inválida ("${hora}"), se espera HH:MM o HH:MM:SS`);
+  }
+  const fchLlegada = fecha(doc.U_SII_FchLlegada);
+  if (fchLlegada) {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(fchLlegada)) t.fechaLlegada = fchLlegada;
+    else errores.push(`U_SII_FchLlegada inválida ("${doc.U_SII_FchLlegada}")`);
+  }
+
+  // Traslado prolongado: fecha de llegada y descripción (se toma de Comments).
+  if (ind === 11 || ind === 12) {
+    if (!t.fechaLlegada) errores.push('El traslado prolongado (11/12) requiere U_SII_FchLlegada (fecha estimada de llegada)');
+    const desc = trunc(doc.Comments, 400);
+    if (!desc) errores.push('El traslado prolongado (11/12) requiere describir el motivo en Comments (distancia, carga especial, etc.)');
+    else t.descripcionProlongado = desc;
+  }
+  // Traslado no venta sin precio: motivo (Comments o, a falta, la descripción del tipo de traslado).
+  if (IND_SIN_PRECIO.includes(ind) && hayLineaSinPrecio) {
+    t.motivoSinPrecio = trunc(doc.Comments, 200) || DESCRIPCION_IND_TRASLADO[ind];
+  }
+
+  if (diferido.length > 0) t.diferido = diferido;
+  if (sinDato.length > 0) t.sinDato = sinDato;
+  return errores.length > erroresAntes ? undefined : t;
 }
 
 function direccionDe(socio: SocioB1, doc: DocumentoB1): { direccion: string; comuna: string; ciudad: string } {

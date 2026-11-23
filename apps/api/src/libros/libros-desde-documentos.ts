@@ -161,14 +161,21 @@ export function resumenesDeBoletas(docs: DocumentoParaLibro[]): ResumenDocumento
     .sort((a, b) => a.tipoDoc - b.tipoDoc);
 }
 
-/** `IndTraslado` de la guía -> `TpoOper` del libro (8 traslado para exportación: otros; 9 venta de exportación: venta). */
-const TIPO_OPERACION_POR_TRASLADO: Record<number, TipoOperacionGuia> = { 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6, 7: 7, 8: 6, 9: 1 };
+/**
+ * `IndTraslado` de la guía -> `TpoOper` del libro. El formato del libro (v1.0, 2003) y su XSD solo definen 1 a 7:
+ * 1 venta, 2 ventas por efectuar, 3 consignaciones, 4 productos en demostración, 5 traslados internos, 6 otros
+ * traslados no venta, 7 devolución. Para los valores de la Res. 144 que el libro no define: 8 (traslado para
+ * exportación, no venta) -> 6; 9 (venta de exportación) -> 1; 11 (traslado prolongado, importa venta) -> 1;
+ * 12 (prolongado, no venta) -> 6; 10 (GDT, traslado tercerizado) -> 6 (complementa datos, no es venta por sí misma).
+ * SUPUESTOS: el SII no ha publicado el mapeo; 4 (entrega gratuita) -> 4 por cercanía.
+ */
+const TIPO_OPERACION_POR_TRASLADO: Record<number, TipoOperacionGuia> = { 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6, 7: 7, 8: 6, 9: 1, 10: 6, 11: 1, 12: 6 };
 
 /** Línea del libro de guías para una guía de despacho (52) emitida. */
 export function documentoADetalleGuia(d: DocumentoParaLibro): DetalleLibroGuias {
   if (d.estado === 'anulado') return { folio: d.folio, anulado: 1 };
   const x = totalesDeXml(d.xmlFirmado);
-  const traslado = /<IndTraslado>(\d)<\/IndTraslado>/.exec(d.xmlFirmado);
+  const traslado = /<IndTraslado>(\d{1,2})<\/IndTraslado>/.exec(d.xmlFirmado);
   const tipoOperacion = TIPO_OPERACION_POR_TRASLADO[traslado ? Number(traslado[1]) : 1] ?? 1;
   const neto = d.montoNeto ?? x.neto ?? 0;
   const iva = d.iva ?? x.iva ?? 0;

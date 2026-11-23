@@ -43,3 +43,5 @@ npm run certificacion:set -- --empresa 76086428-5 --archivo set.txt --libros --c
 - Notas de corrección de texto sin ítems generan una línea en monto cero (por confirmar con el SII).
 - El formato textual del set de compras del SII no se conoce con certeza: los documentos recibidos se toman de un JSON (ver abajo). Verificar contra el set real.
 - El libro de guías no forma parte de las instrucciones del set; `--guias` es opcional y usa el folio de notificación 3 (supuesto): para otro folio use `POST /v1/empresas/:rut/libros/guias`.
+
+Nota (Res. Ex. SII 144/2026): `SII_Instrucciones_Set_de_Pruebas.pdf` no menciona datos de transporte (chofer, patente, transportista), así que el parser del set no los trae y las guías del set se emiten sin bloque `traslado`. `indTraslado` del set sigue siendo 1 a 9.
