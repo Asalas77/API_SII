@@ -135,7 +135,18 @@ describe.skipIf(!hayDb)('Row Level Security por empresa (e2e, rol de aplicación
       relforcerowsecurity: boolean;
     }>;
     expect(filas.map((f) => f.relname).sort()).toEqual(
-      ['cafs', 'certificados', 'documentos', 'empresas', 'envio_documentos', 'envios', 'libros'],
+      [
+        'buzones_correo',
+        'cafs',
+        'certificados',
+        'documentos',
+        'dte_recibidos',
+        'empresas',
+        'envio_documentos',
+        'envios',
+        'envios_recibidos',
+        'libros',
+      ],
     );
     for (const f of filas) expect([f.relname, f.relrowsecurity, f.relforcerowsecurity]).toEqual([f.relname, true, true]);
   });
@@ -235,7 +246,7 @@ describe.skipIf(!hayDb)('Row Level Security por empresa (e2e, rol de aplicación
 
   it('sin GUC fijado no hay filas (fail-closed) y no se puede escribir', async () => {
     await conContexto(null, async (q) => {
-      for (const t of ['empresas', 'certificados', 'cafs', 'documentos', 'envios', 'envio_documentos', 'libros']) {
+      for (const t of ['empresas', 'certificados', 'cafs', 'documentos', 'envios', 'envio_documentos', 'libros', 'envios_recibidos', 'dte_recibidos', 'buzones_correo']) {
         expect(await q(`SELECT 1 FROM ${t}`), t).toHaveLength(0);
       }
       await expect(

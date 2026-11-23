@@ -6,7 +6,7 @@ Referencias: `docs/referencias-sii/pdf/SII_Formato_Intercambio_IC.pdf` (respuest
 
 ## Flujo en la certificación (paso a paso)
 
-1. El SII (o la contraparte) envía por correo un `EnvioDTE` a la casilla de intercambio registrada del contribuyente. *(Pendiente: buzón IMAP, ver abajo.)*
+1. El SII (o la contraparte) envía por correo un `EnvioDTE` a la casilla de intercambio registrada del contribuyente. *(Buzón IMAP implementado en `src/recepcion`.)*
 2. `analizarEnvioRecibido(xml, receptor, historial?, metadatos?)` decodifica (ISO-8859-1, o UTF-8 si lo declara), valida XSD (`EnvioDTE`/`EnvioBOLETA`), verifica firma del sobre y de cada DTE, verifica cada TED con la clave pública del CAF incrustado (`RSAPK`), compara RUT receptor y detecta repetidos. Devuelve `AnalisisEnvio` con estado del envío y de cada DTE.
 3. `construirRecepcionEnvio(analisis, datos)` -> `RespuestaDTE/RecepcionEnvio` (acuse de recibo del envío, con `RecepcionDTE` por documento). Se envía al emisor (`RutRecibe`) por correo.
 4. Tras la revisión comercial, `construirResultadoDte(resultados, datos)` -> `RespuestaDTE/ResultadoDTE` (aceptado 0, con discrepancias 1, rechazado 2). Ayuda: `resultadoDesdeAnalisis`.
@@ -64,9 +64,7 @@ npx tsc --noEmit -p tsconfig.json
 
 ## Pendientes
 
-- Buzón de correo (IMAP) para recibir los envíos y SMTP para responder; extracción del adjunto y `nombreArchivo`/`codigoEnvio` reales (hoy son metadatos que pasa quien llama; por defecto `envio.xml` y 1).
-- Persistencia del historial (`HistorialRecepcion`), de `CodEnvio` e `IdRespuesta`.
-- Registro de aceptación o reclamo de DTE en el SII (eventos `ACD`/`RCD`/`ERM`/`RFP`/`RFT`, servicio de registro de reclamos): fuera del alcance de este paquete.
+- ~~Buzón IMAP/SMTP, persistencia del historial, `CodEnvio` e `IdRespuesta`, registro de aceptación/reclamo ante el SII~~: implementados en `src/recepcion` (ver su README). Allí no se usa `historial.envios` (el `SetDTE/@ID` suele ser siempre `SetDoc`; se deduplica por SHA-256 del archivo y por `(emisor, tipo, folio)` de cada DTE).
 - No se verifica `FRMA` del CAF (requiere la clave pública del SII por `IDK`, igual que `dte-core`) ni la cadena de confianza de los certificados.
 - Sin tratamiento de `Exportaciones`/`Liquidacion` más allá de leer su encabezado; las boletas (`EnvioBOLETA`) se analizan pero no se intercambian entre contribuyentes.
 - Validar contra el ambiente de certificación del SII el formato exacto (espacios, `KeyInfo`) de las respuestas y recibos.

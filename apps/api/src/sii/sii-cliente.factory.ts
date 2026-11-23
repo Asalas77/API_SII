@@ -8,6 +8,7 @@ import { CifradoService } from '../seguridad/cifrado.service.js';
 import {
   BoletaApiClient,
   DteSiiClient,
+  RegistroReclamoClient,
   type FetchImpl,
 } from '../sii-gateway/index.js';
 import type { AmbienteSii } from '../sii-gateway/index.js';
@@ -26,6 +27,8 @@ export interface CertificadoActivo {
 export interface ClientesSii {
   boleta: BoletaApiClient;
   dte: DteSiiClient;
+  /** Registro de aceptación/reclamo de DTE recibidos; comparte el token del cliente DTE. */
+  reclamo: RegistroReclamoClient;
   certificado: CertificadoActivo;
 }
 
@@ -99,9 +102,11 @@ export class SiiClienteFactory {
       firmador,
       fetchImpl: this.fetchImpl,
     };
+    const dte = new DteSiiClient(comunes);
     return {
       boleta: new BoletaApiClient(comunes),
-      dte: new DteSiiClient(comunes),
+      dte,
+      reclamo: new RegistroReclamoClient({ ambiente, tokens: dte, fetchImpl: this.fetchImpl }),
       certificado,
     };
   }

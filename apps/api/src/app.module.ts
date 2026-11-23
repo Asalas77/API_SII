@@ -11,6 +11,7 @@ import { EnviosModule } from './envios/envios.module.js';
 import { FoliosModule } from './folios/folios.module.js';
 import { HealthModule } from './health/health.module.js';
 import { LibrosModule } from './libros/libros.module.js';
+import { RecepcionModule } from './recepcion/recepcion.module.js';
 import { SeguridadModule } from './seguridad/seguridad.module.js';
 import { SiiModule } from './sii/sii.module.js';
 
@@ -26,6 +27,7 @@ import { SiiModule } from './sii/sii.module.js';
     DocumentosModule,
     EnviosModule,
     LibrosModule,
+    RecepcionModule,
     SeguridadModule,
     SiiModule,
   ],

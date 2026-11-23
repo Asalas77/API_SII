@@ -39,6 +39,19 @@ Origen: https://www.sii.cl/factura_electronica/factura_mercado/ (`schema_dte.zip
 Los libros vienen de https://www.sii.cl/factura_electronica/schema_iecv.zip (`schema_iecv_LibroCV_v10.zip`) y https://www.sii.cl/factura_electronica/schema_lgd.zip (`schema_lgd_LibroGuia_v10.zip`). Sus XSD están extraídos en `apps/api/resources/sii/xsd/libros/` (ver su README: `LibroGuia_v10.xsd` define su propia `Signature` y se usa una copia con el import de `xmldsig`).
 Pendientes de descargar si se necesitan: `schema19983.zip` (recibo Ley 19.983), `ConsumoFolio_v10.xsd`.
 
+## Registro de aceptación/reclamo de DTE (Ley 20.956)
+
+Carpeta propia `registro-reclamo/` (descargado el 2026-11-22), usada por `apps/api/src/sii-gateway/reclamo` y `apps/api/src/recepcion`:
+
+| Archivo | Qué es | Origen |
+|---|---|---|
+| `registro-reclamo/SII_Webservice_Registro_Reclamo_DTE_V1.1.pdf` | "Web Service de Consulta y Registro de Aceptación/Reclamo a DTE recibido" v1.1 (16/03/2017): `ingresarAceptacionReclamoDoc` (ACD, RCD, ERM, RFP, RFT), `listarEventosHistDoc`, `consultarDocDteCedible`, `consultarFechaRecepcionSii`, códigos de respuesta y regla de los 8 días | https://www.sii.cl/factura_electronica/Webservice_Registro_Reclamo_DTE_V1.1.pdf |
+| `registro-reclamo/registroreclamodteservice_ws1.wsdl` | WSDL de producción (SOAP 1.1 rpc/literal, `https://ws1.sii.cl/WSREGISTRORECLAMODTE/registroreclamodteservice`) | https://ws1.sii.cl/WSREGISTRORECLAMODTE/registroreclamodteservice?wsdl |
+| `registro-reclamo/registroreclamodteservice_ws2_cert.wsdl` | WSDL de certificación (`https://ws2.sii.cl/WSREGISTRORECLAMODTECERT/registroreclamodteservice`; la ruta lleva el sufijo `CERT`) | https://ws2.sii.cl/WSREGISTRORECLAMODTECERT/registroreclamodteservice?wsdl |
+| `registro-reclamo/registroreclamodteservice.xsd2.xsd` | Tipos de la respuesta (`respuestaTo`: `codResp`, `descResp`, `listaEventosDoc*`, `rutToken`) referenciado por los WSDL | https://ws1.sii.cl/WSREGISTRORECLAMODTE/registroreclamodteservice.xsd2.xsd |
+
+Nota: la URL del PDF para certificación que da el documento (`.../WSREGISTRORECLAMODTECERT/...`) se confirmó con el WSDL; el PDF no describe el formato de las fechas ni cómo se obtiene el token para este servicio (supuestos documentados en `apps/api/src/recepcion/README.md`).
+
 ## OpenAPI
 
 `openapi/sii_boleta_electronica_openapi_v1.0.5.json`: especificación oficial "API SII - V1" (versión 1.0.5) de la API REST de

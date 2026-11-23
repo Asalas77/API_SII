@@ -21,6 +21,20 @@ export const RUTAS_DTE = {
   upload: '/cgi_dte/UPL/DTEUpload',
 } as const;
 
+/**
+ * Web service de Registro de Aceptación/Reclamo de DTE (Ley 20.956). Los hosts y rutas salen de los WSDL
+ * oficiales descargados (`docs/referencias-sii/registro-reclamo/`): certificación `ws2.sii.cl` con la ruta
+ * `/WSREGISTRORECLAMODTECERT/...` (distinta de la de producción), producción `ws1.sii.cl`.
+ */
+export const URLS_RECLAMO: Readonly<Record<AmbienteSii, string>> = {
+  certificacion: 'https://ws2.sii.cl/WSREGISTRORECLAMODTECERT/registroreclamodteservice',
+  produccion: 'https://ws1.sii.cl/WSREGISTRORECLAMODTE/registroreclamodteservice',
+};
+
+export function urlReclamo(ambiente: AmbienteSii): string {
+  return URLS_RECLAMO[ambiente];
+}
+
 /** URL base de la API REST de boleta electrónica (todos los recursos). */
 export const BASES_BOLETA: Readonly<Record<AmbienteSii, string>> = {
   certificacion: 'https://apicert.sii.cl/recursos/v1',

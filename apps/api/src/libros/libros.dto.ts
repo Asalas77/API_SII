@@ -64,7 +64,13 @@ export interface DocumentoCompraDto {
 }
 
 export interface GenerarLibroComprasDto extends GenerarLibroBaseDto {
-  documentos: DocumentoCompraDto[];
+  /** Documentos recibidos informados por el cliente. Obligatorio salvo con `desdeRecibidos: true`. */
+  documentos?: DocumentoCompraDto[];
+  /**
+   * true: el detalle sale de los DTE recibidos (`dte_recibidos`) aceptados (con o sin reparos) cuya fecha de
+   * emisión cae en `periodo`. No admite `documentos` ni `documentosPeriodo`.
+   */
+  desdeRecibidos?: boolean;
   /** Envío AJUSTE: todos los documentos del período después del ajuste. */
   documentosPeriodo?: DocumentoCompraDto[];
   /** Factor de proporcionalidad del IVA de uso común (0,001 a 99,999). */
@@ -153,9 +159,19 @@ export const generarLibroComprasSchema = Joi.object<GenerarLibroComprasDto>({
   tipoLibro: Joi.string().valid('MENSUAL', 'ESPECIAL', 'RECTIFICA'),
   folioNotificacion,
   codAutRec: Joi.string().trim().max(10),
-  documentos: Joi.array().items(documentoCompraSchema).max(50_000).required(),
+  documentos: Joi.array().items(documentoCompraSchema).max(50_000),
+  desdeRecibidos: Joi.boolean(),
   documentosPeriodo: Joi.array().items(documentoCompraSchema).max(50_000),
   factorProporcionalidad: Joi.number().min(0.001).max(99.999),
+}).custom((v: GenerarLibroComprasDto, helpers) => {
+  if (v.desdeRecibidos) {
+    if (v.documentos !== undefined || v.documentosPeriodo !== undefined) {
+      return helpers.message({ custom: 'con desdeRecibidos no se informan documentos ni documentosPeriodo' });
+    }
+  } else if (v.documentos === undefined) {
+    return helpers.message({ custom: 'documentos es obligatorio (o use desdeRecibidos: true)' });
+  }
+  return v;
 });
 
 export const filtroLibrosSchema = Joi.object<FiltroLibrosQuery>({ periodo: periodoSchema });

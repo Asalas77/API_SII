@@ -106,7 +106,7 @@ P=2026-11                      # período de los documentos del set
 # Libro de Ventas desde los documentos emitidos en el período (33, 34, 56, 61; ESPECIAL no incluye boletas)
 curl -H "$K" -X POST $B/empresas/76086428-5/libros/ventas -H 'content-type: application/json'   -d "{\"periodo\":\"$P\",\"tipoLibro\":\"ESPECIAL\",\"tipoEnvio\":\"TOTAL\",\"folioNotificacion\":1}"
 
-# Libro de Compras: no hay recepción de DTE de proveedores en la base; se envían los documentos del set de compras
+# Libro de Compras: los documentos del set de compras se envían en el JSON (con DTE recibidos en la base, ver sección 8: "desdeRecibidos":true)
 curl -H "$K" -X POST $B/empresas/76086428-5/libros/compras -H 'content-type: application/json' -d '{
   "periodo":"2026-11","tipoLibro":"ESPECIAL","tipoEnvio":"TOTAL","folioNotificacion":2,"factorProporcionalidad":0.6,
   "documentos":[
@@ -136,12 +136,66 @@ npm run certificacion:set -- --empresa 76086428-5 --archivo set.txt --libros --c
 
 El modo simulado escribe `LibroVentas.xml` y `LibroCompras.xml` (validados contra el XSD) sin guardar nada. El modo real los guarda (consulte `GET $B/empresas/.../libros`) y con `--enviar-libros` los sube; envíelos después de que el SII haya recibido el sobre del set. Revise los datos del set de compras antes de enviar: el formato textual de ese set no está publicado y por eso se toma de un JSON.
 
-## 8. Qué sigue
+## 8. Intercambio de información entre contribuyentes (recepción de DTE)
+
+En esta etapa el SII le **envía** un set de DTE (un `EnvioDTE` con varios documentos, algunos con errores deliberados) y usted debe **responder**: (1) el acuse técnico `RecepcionEnvio`, (2) la aprobación o rechazo comercial `ResultadoDTE` por cada documento y (3) el `EnvioRecibos` (recibo de mercaderías, Ley 19.983). Formatos: `docs/referencias-sii/pdf/SII_Formato_Intercambio_IC.pdf` y `SII_Formato_Recibos_Ley19983.pdf`; lógica pura en `apps/api/src/intercambio/README.md`, módulo operativo en `apps/api/src/recepcion/README.md`. Permisos de la API key: `recepcion.recibir`, `recepcion.leer`, `recepcion.responder` y `recepcion.configurar`.
+
+Requisitos: empresa con **certificado activo** (firma las respuestas) y, para recibir por correo, el correo de intercambio registrado en el SII apuntando al buzón que configure abajo (`correoIntercambio` de la empresa se informa como contacto en las respuestas).
+
+```bash
+E=76086428-5
+
+# (a) Recibir por subida del archivo (el XML del set de intercambio que le envió el SII)
+curl -H "$K" -X POST $B/empresas/$E/recepcion -F archivo=@set_intercambio.xml
+#  -> 201 con el resumen por DTE (estado 0 = recibido OK; 1 firma/TED, 2 RUT emisor, 3 RUT receptor, 4 repetido, 99 otros),
+#     y estadoRecepcion del envío (0, 1 schema, 2 firma, 3 RUT receptor, 91 ilegible). El mismo archivo otra vez -> 200 sin duplicar.
+#     Un sobre con errores también se registra (con su código) y genera igualmente su acuse.
+
+# (b) o por correo: configurar el buzón IMAP/SMTP y revisar ahora (el sondeo automático requiere BUZON_CORREO_HABILITADO=true)
+curl -H "$K" -X PUT $B/empresas/$E/buzon-correo -H 'content-type: application/json' -d '{
+  "imapHost":"imap.midominio.cl","usuario":"intercambio@midominio.cl","password":"***","carpetaProcesados":"Procesados",
+  "smtpHost":"smtp.midominio.cl","smtpPuerto":587,"smtpRemitente":"intercambio@midominio.cl","intervaloSegundos":300}'
+curl -H "$K" -X POST $B/empresas/$E/buzon-correo/sondear     # procesa los XML adjuntos y responde el acuse por SMTP
+
+# Revisar lo recibido
+curl -H "$K" "$B/empresas/$E/envios-recibidos"
+curl -H "$K" "$B/empresas/$E/dte-recibidos?estado=pendiente"
+curl -H "$K" $B/envios-recibidos/<idEnvio>/recepcion-envio -o RecepcionEnvio.xml        # (1) acuse del envío
+curl -H "$K" $B/envios-recibidos/<idEnvio>/enviar-acuse -X POST -H 'content-type: application/json' -d '{"destinatario":"correo-del-emisor@x.cl"}'
+
+# (2) Respuesta comercial de cada DTE (el id sale de dte-recibidos). Rechazar exige glosa (Ley 19.983).
+curl -H "$K" -X POST $B/dte-recibidos/<idDte>/aceptar  -H 'content-type: application/json' -d '{"enviarCorreo":true}'
+curl -H "$K" -X POST $B/dte-recibidos/<idDte>/aceptar  -H 'content-type: application/json' -d '{"reparos":true,"glosa":"Precio distinto al pactado"}'
+curl -H "$K" -X POST $B/dte-recibidos/<idDte>/rechazar -H 'content-type: application/json' -d '{"glosa":"Mercadería no solicitada","codigoRechazo":-101}'
+curl -H "$K" $B/dte-recibidos/<idDte>/resultado-dte -o ResultadoDTE.xml
+
+# (3) Recibo de mercaderías (solo 33, 34, 46, 52, 56 y 61; una sola vez; no procede si el DTE fue rechazado)
+curl -H "$K" -X POST $B/dte-recibidos/<idDte>/recibo-mercaderias -H 'content-type: application/json'   -d '{"recinto":"Bodega central, Santiago","rutFirma":"12345678-5"}'
+curl -H "$K" $B/dte-recibidos/<idDte>/envio-recibos -o EnvioRecibos.xml
+```
+
+Cada respuesta se valida contra su XSD antes de guardarse (`RespuestaEnvioDTE_v10`, `EnvioRecibos_v10`) y se firma con el certificado de la empresa. Con `"enviarCorreo": true` se envía por SMTP al remitente del envío (o a `destinatario`); si el correo falla, la respuesta queda guardada y descargable y el error se informa en `correo.error`. **Cómo se entregan las respuestas al SII en la etapa de certificación** (carga en la página de certificación o correo a la casilla que indique el SII) lo define el SII en el set: descargue los XML con los comandos de arriba y entréguelos como indique; esa parte no está automatizada ni verificada aquí.
+
+### Aceptación y reclamo ante el SII (Ley 20.956)
+
+Además de responder al emisor, el receptor tiene **8 días corridos desde la recepción del DTE en el SII** para reclamar o acusar recibo; pasado el plazo se presume la entrega. La API lo registra en el web service `RegistroReclamoDTE` (certificación: `ws2.sii.cl/WSREGISTRORECLAMODTECERT`, producción: `ws1.sii.cl/WSREGISTRORECLAMODTE`; solo opera sobre tipos 33, 34 y 43, y el certificado debe ser del representante legal o de un usuario autorizado de la empresa receptora).
+
+```bash
+curl -H "$K" -X POST $B/dte-recibidos/<idDte>/consultar-sii                # eventos, fecha real de recepción en el SII, cedibilidad; recalcula el plazo
+curl -H "$K" -X POST $B/dte-recibidos/<idDte>/registrar-sii -H 'content-type: application/json' -d '{"accion":"ACD"}'
+# ACD acepta contenido | RCD reclama contenido | ERM otorga recibo de mercaderías | RFP reclamo falta parcial | RFT reclamo falta total
+```
+
+El plazo mostrado antes de `consultar-sii` es una **estimación** (recepción propia + 8 días, `plazoConfirmadoSii: false`); `consultar-sii` lo reemplaza con la fecha real. Vencido el plazo la API responde 422 `PLAZO_VENCIDO` (también para ERM, según el PDF del SII) sin llamar al SII. Un conflicto de estado (reclamar un DTE aceptado, acusar recibo de uno reclamado, evento repetido) responde 409 `SII_REGISTRO_CONFLICTO` con la descripción del SII.
+
+**Libro de compras desde lo recibido:** `POST $B/empresas/$E/libros/compras` con `{"periodo":"2026-11","desdeRecibidos":true}` arma el detalle con los DTE recibidos **aceptados** (con o sin reparos) cuya fecha de emisión cae en el período (las guías 52 se omiten: van en su libro). La entrada con `documentos` (sección 7) sigue funcionando; no se pueden mezclar.
+
+## 9. Qué sigue
 
 1. **Simulación**: el SII pide emitir documentos de un "set de simulación" con datos propios del contribuyente (mismo flujo, vía `POST /documentos` y `POST /envios`).
-2. **Intercambio entre contribuyentes** (`src/intercambio`: recepción, acuse/recibos, respuestas) y **muestras impresas** aprobadas.
+2. **Muestras impresas** aprobadas (sección 6).
 3. **Declaración de cumplimiento** de requisitos técnicos y paso a producción: cambiar `ambienteSii` a `produccion` (exige certificado activo), cargar CAF de producción y certificado definitivo.
 
-## 9. Antes de producción
+## 10. Antes de producción
 
 Claves API propias por integración (no usar la clave de administración en producción), clave maestra propia y rotación, almacenamiento de XML en object storage, respaldos y monitoreo (ver `docs/diseno/08-seguridad.md` y `11-operacion-y-despliegue.md`). Verifique contra maullin/apicert los formatos de respuesta reales: los clientes se probaron solo con respuestas simuladas.

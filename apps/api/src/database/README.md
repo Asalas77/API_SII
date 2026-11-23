@@ -21,6 +21,12 @@ empresas 1──* envios
 | `envio_documentos` | N:M envío–documento con estado/glosa por documento. PK compuesta. |
 | `libros` | Libro electrónico generado y firmado (`tipo_operacion` VENTA/COMPRA/GUIA, `tipo_libro`, `tipo_envio`, `periodo` AAAA-MM, `folio_notificacion`, `nro_segmento`), `xml_libro`, `resumen` (jsonb), Track ID, estado y respuesta del SII. RLS forzada por `empresa_id`. Migración `1795400000000-Libros`. |
 
+| `envios_recibidos` | `EnvioDTE` recibido de un proveedor: XML original (`bytea`), `hash_sha256` único por empresa, `codigo_envio`, `estado_recepcion`, acuse `RecepcionEnvio`. RLS forzada por `empresa_id`. Migración `1795600000000-Recepcion`. |
+| `dte_recibidos` | DTE de proveedor recibido OK: montos, XML individual, `estado_comercial`, plazo de reclamo, `registro_sii` (jsonb). Único `(empresa_id, rut_emisor, tipo_dte, folio)`. RLS forzada. |
+| `buzones_correo` | Buzón IMAP/SMTP de la empresa (uno por empresa), contraseñas cifradas con `CifradoService`. RLS forzada. |
+
+Módulo `recepcion`: `src/recepcion/README.md`.
+
 ### Convenciones
 
 - Tablas y columnas en `snake_case` y español (terminología del SII); entidades y servicios también en español.

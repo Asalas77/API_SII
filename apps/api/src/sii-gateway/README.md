@@ -17,6 +17,11 @@ Clientes HTTP hacia el SII de Chile. Son clases puras (sin decoradores Nest); el
 | | `consultarEstadoEnvio` | SOAP `getEstUp` en `/DTEWS/QueryEstUp.jws` |
 | | `consultarEstadoDte` | SOAP `getEstDte` en `/DTEWS/QueryEstDte.jws` |
 
+| `RegistroReclamoClient` | `ingresarAceptacionReclamo` | SOAP `ingresarAceptacionReclamoDoc` (ACD, RCD, ERM, RFP, RFT) en `ws2.sii.cl/WSREGISTRORECLAMODTECERT/registroreclamodteservice` (cert.) / `ws1.sii.cl/WSREGISTRORECLAMODTE/registroreclamodteservice` (prod.) |
+| | `listarEventos`, `consultarDocDteCedible`, `consultarFechaRecepcion`, `obtenerVersion` | SOAP `listarEventosHistDoc`, `consultarDocDteCedible`, `consultarFechaRecepcionSii`, `getVersion` |
+
+`RegistroReclamoClient` (`reclamo/`) toma el token de `DteSiiClient` (mismo flujo de semilla y misma caché; `SiiClienteFactory.paraEmpresa(...).reclamo`) y lo envía en `Cookie: TOKEN=`. Solo opera sobre los tipos 33, 34 y 43. Referencias oficiales y supuestos: `src/recepcion/README.md` y `docs/referencias-sii/registro-reclamo/`.
+
 Hosts (`ambientes.ts`): DTE `maullin.sii.cl` (certificación) / `palena.sii.cl` (producción); boleta `apicert.sii.cl` / `api.sii.cl`. El envío de boletas puede ir a los hosts temporales `pangal.sii.cl` / `rahue.sii.cl` con `usarHostEnvioAlternativo: true`.
 
 Los libros electrónicos (IECV y guías) se suben por el mismo `enviarDte` (`/cgi_dte/UPL/DTEUpload`) y su estado se consulta con `consultarEstadoEnvio` (`getEstUp`); ver `src/libros`.

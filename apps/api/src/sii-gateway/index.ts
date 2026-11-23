@@ -29,3 +29,18 @@ export {
   clasificarEstadoEnvioDte,
   type ClasificacionEstado,
 } from './dte/estados.js';
+export {
+  RegistroReclamoClient,
+  ACCIONES_RECLAMO,
+  TIPOS_RECLAMO_DTE,
+  parsearFechaRecepcionSii,
+  type AccionReclamo,
+  type EventoDocumento,
+  type ProveedorTokenSii,
+  type RegistroReclamoClientOpciones,
+  type RespuestaCedible,
+  type RespuestaEventos,
+  type RespuestaFechaRecepcion,
+  type RespuestaRegistroReclamo,
+  type ReferenciaDocumentoReclamo,
+} from './reclamo/registro-reclamo.client.js';

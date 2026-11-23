@@ -4,6 +4,7 @@ import { type AccesoEmpresas, asegurarRecursoDeEmpresa } from '../auth/principal
 import { documentoInvalido, noEncontrado, ProblemaHttp } from '../comun/problema.js';
 import { EjecutorEmpresa } from '../database/ejecutor-empresa.js';
 import { Documento } from '../documentos/entities/documento.entity.js';
+import { DteRecibido } from '../recepcion/entities/dte-recibido.entity.js';
 import {
   aIso88591,
   construirLibroCompraVenta,
@@ -163,17 +164,29 @@ export class LibrosService {
     );
   }
 
-  /** Libro de compras desde el JSON del cliente (no hay recepción de DTE de proveedores en la base). */
+  /**
+   * Libro de compras desde el JSON del cliente o, con `desdeRecibidos`, desde los DTE recibidos aceptados
+   * del período (módulo `recepcion`).
+   */
   async armarCompras(
     empresa: Empresa,
     dto: GenerarLibroComprasDto,
     o: OpcionesArmado = {},
   ): Promise<LibroArmado> {
     const certificado = o.certificado ?? (await this.sii.certificadoActivo(empresa.id));
+    const advertencias: string[] = [];
+    let documentos: DocumentoCompraDto[];
+    if (dto.desdeRecibidos) {
+      const r = await this.comprasDeRecibidos(empresa, dto.periodo);
+      documentos = r.documentos;
+      advertencias.push(...r.advertencias);
+    } else {
+      documentos = dto.documentos ?? [];
+    }
     const libro = conErroresDeDominio(() =>
       construirLibroCompraVenta({
         caratula: this.caratulaCV(empresa, certificado, 'COMPRA', dto),
-        detalle: dto.documentos.map(aDetalleCompra),
+        detalle: documentos.map(aDetalleCompra),
         documentosPeriodo: dto.documentosPeriodo?.map(aDetalleCompra),
         factorProporcionalidad: dto.factorProporcionalidad,
         certificado,
@@ -185,9 +198,68 @@ export class LibrosService {
       dto,
       libro,
       libro.resumenPeriodo ?? libro.resumenSegmento,
-      dto.documentos.length,
-      [],
+      documentos.length,
+      advertencias,
     );
+  }
+
+  /**
+   * Detalle de compras a partir de `dte_recibidos`: solo los aceptados (con o sin reparos) y emitidos en el
+   * período. Las guías de despacho (52) no van en el IECV (tienen su propio libro) y se omiten con una advertencia.
+   */
+  private async comprasDeRecibidos(
+    empresa: Empresa,
+    periodo: string,
+  ): Promise<{ documentos: DocumentoCompraDto[]; advertencias: string[] }> {
+    const { desde, hasta } = rangoPeriodo(periodo);
+    const filas = await this.ejecutor.ejecutar((em) =>
+      em.getRepository(DteRecibido).find({
+        where: {
+          empresaId: empresa.id,
+          estadoComercial: In(['aceptado', 'aceptado_con_reparos']),
+          fechaEmision: Between(desde, hasta),
+        },
+        select: {
+          id: true,
+          tipoDte: true,
+          folio: true,
+          rutEmisor: true,
+          dvEmisor: true,
+          razonSocialEmisor: true,
+          fechaEmision: true,
+          montoNeto: true,
+          montoExento: true,
+          iva: true,
+          montoTotal: true,
+          otrosImpuestos: true,
+        },
+        order: { tipoDte: 'ASC', folio: 'ASC', rutEmisor: 'ASC' },
+      }),
+    );
+    const advertencias: string[] = [];
+    const guias = filas.filter((f) => f.tipoDte === 52);
+    if (guias.length > 0) {
+      advertencias.push(
+        `Se omitieron ${guias.length} guía(s) de despacho recibidas (van en el libro de guías): ${guias.map((g) => g.folio).join(', ')}`,
+      );
+    }
+    const documentos = filas
+      .filter((f) => f.tipoDte !== 52)
+      .map(
+        (f): DocumentoCompraDto => ({
+          tipoDoc: f.tipoDte,
+          folio: f.folio,
+          fechaDoc: f.fechaEmision,
+          rutProveedor: formatearRut(f.rutEmisor, f.dvEmisor),
+          ...(f.razonSocialEmisor ? { razonSocial: f.razonSocialEmisor.slice(0, 50) } : {}),
+          ...(f.montoExento ? { montoExento: f.montoExento } : {}),
+          ...(f.montoNeto ? { montoNeto: f.montoNeto } : {}),
+          ...(f.iva !== null && f.montoNeto ? { montoIva: f.iva } : {}),
+          ...(f.otrosImpuestos && f.otrosImpuestos.length > 0 ? { otrosImpuestos: f.otrosImpuestos } : {}),
+          montoTotal: f.montoTotal,
+        }),
+      );
+    return { documentos, advertencias };
   }
 
   /** Libro de guías de despacho del período desde `documentos` tipo 52. */

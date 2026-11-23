@@ -7,6 +7,9 @@ import { EnvioDocumento } from '../../src/envios/entities/envio-documento.entity
 import { Envio } from '../../src/envios/entities/envio.entity.js';
 import { Caf } from '../../src/folios/entities/caf.entity.js';
 import { Libro } from '../../src/libros/entities/libro.entity.js';
+import { BuzonCorreo } from '../../src/recepcion/entities/buzon-correo.entity.js';
+import { DteRecibido } from '../../src/recepcion/entities/dte-recibido.entity.js';
+import { EnvioRecibido } from '../../src/recepcion/entities/envio-recibido.entity.js';
 import { cargarEntorno } from './db.js';
 
 /**
@@ -25,7 +28,7 @@ export async function crearDsFixtures(): Promise<DataSource> {
     username: process.env.DATABASE_USER,
     password: process.env.DATABASE_PASSWORD,
     database: process.env.DATABASE_NAME,
-    entities: [Empresa, Certificado, Caf, Documento, Envio, EnvioDocumento, Libro, ApiKey],
+    entities: [Empresa, Certificado, Caf, Documento, Envio, EnvioDocumento, Libro, ApiKey, EnvioRecibido, DteRecibido, BuzonCorreo],
     extra: { options: '-c app.todas_empresas=on' },
   });
   await ds.initialize();

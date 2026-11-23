@@ -11,6 +11,15 @@ export interface LlamadaSii {
   body?: unknown;
 }
 
+export interface EventoReclamoSimulado {
+  codigo: string;
+  descripcion?: string;
+  rutResponsable?: string;
+  dvResponsable?: string;
+  /** `dd-mm-yyyy HH:MM:SS` (hora de Chile). */
+  fecha?: string;
+}
+
 export interface SiiSimulado {
   fetch: (url: string, init?: RequestInit) => Promise<Response>;
   llamadas: LlamadaSii[];
@@ -25,6 +34,16 @@ export interface SiiSimulado {
   estadoDocumentoDte: Record<string, { estado: string; glosa?: string }>;
   /** Igual para `GET boleta.electronica/{rut}-{dv}-{tipo}-{folio}/estado` (clave `tipo-folio`); sin entrada, DOK. */
   estadoDocumentoBoleta: Record<string, { codigo: string; descripcion?: string }>;
+  /**
+   * Registro de aceptación/reclamo (RegistroReclamoDTE), por documento con clave `tipo-folio`. Aplica las
+   * reglas del PDF v1.1: un reclamo bloquea ACD y ERM, un ACD bloquea reclamos, un ERM bloquea reclamos, el
+   * mismo evento dos veces responde 7 y pasados 8 días desde `fechaRecepcionReclamo` responde 8.
+   */
+  eventosReclamo: Record<string, EventoReclamoSimulado[]>;
+  /** Fecha de recepción en el SII (`dd-mm-yyyy HH:MM:SS`) por `tipo-folio`; sin entrada, hace 1 día. */
+  fechaRecepcionReclamo: Record<string, string>;
+  /** Fuerza el `codResp` de `ingresarAceptacionReclamoDoc` (para probar errores del SII). */
+  forzarCodigoReclamo?: { codigo: number; descripcion: string };
   /** Siguiente track id (se incrementa en cada envío). */
   siguienteTrackId: number;
 }
@@ -56,6 +75,8 @@ export function crearSiiSimulado(): SiiSimulado {
     },
     estadoDocumentoDte: {},
     estadoDocumentoBoleta: {},
+    eventosReclamo: {},
+    fechaRecepcionReclamo: {},
     fetch: async (url, init) => {
       const method = init?.method ?? 'GET';
       sim.llamadas.push({ url, method, body: init?.body });
@@ -109,6 +130,9 @@ export function crearSiiSimulado(): SiiSimulado {
           `<?xml version="1.0" encoding="UTF-8"?><RECEPCIONDTE><RUTSENDER>1-9</RUTSENDER><RUTCOMPANY>1-9</RUTCOMPANY><FILE>envio.xml</FILE><TIMESTAMP>2026-11-18 10:00:00</TIMESTAMP><STATUS>0</STATUS><TRACKID>${sim.siguienteTrackId++}</TRACKID></RECEPCIONDTE>`,
         );
       }
+      if (u.pathname.endsWith('/registroreclamodteservice') && method === 'POST') {
+        return reclamoSimulado(sim, typeof init?.body === 'string' ? init.body : '');
+      }
       if (u.pathname.endsWith('/QueryEstDte.jws')) {
         const cuerpo = (typeof init?.body === 'string' ? init.body : '');
         const tipo = /<TipoDte>(\d+)<\/TipoDte>/.exec(cuerpo)?.[1];
@@ -136,4 +160,99 @@ export function crearSiiSimulado(): SiiSimulado {
     },
   };
   return sim;
+}
+
+
+// --- RegistroReclamoDTE -------------------------------------------------------------------------
+
+const NS_RECLAMO = 'http://ws.registroreclamodte.diii.sdi.sii.cl';
+const RECLAMOS = ['RCD', 'RFP', 'RFT'];
+
+function ahoraChile(d: Date): string {
+  const p = Object.fromEntries(
+    new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'America/Santiago',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    })
+      .formatToParts(d)
+      .map((x) => [x.type, x.value]),
+  );
+  return `${p.day}-${p.month}-${p.year} ${p.hour === '24' ? '00' : p.hour}:${p.minute}:${p.second}`;
+}
+
+function parteChile(texto: string): Date {
+  const m = /^(\d{2})-(\d{2})-(\d{4}) (\d{2}):(\d{2}):(\d{2})$/.exec(texto);
+  if (!m) return new Date(Number.NaN);
+  // Aproximación suficiente para medir 8 días (±1 h por cambio de hora no afecta las pruebas).
+  return new Date(Date.UTC(+m[3], +m[2] - 1, +m[1], +m[4] + 3, +m[5], +m[6]));
+}
+
+function respuestaRpc(operacion: string, interior: string): Response {
+  return xml(
+    '<?xml version="1.0" encoding="UTF-8"?>' +
+      '<S:Envelope xmlns:S="http://schemas.xmlsoap.org/soap/envelope/"><S:Body>' +
+      `<ns2:${operacion}Response xmlns:ns2="${NS_RECLAMO}">${interior}</ns2:${operacion}Response>` +
+      '</S:Body></S:Envelope>',
+  );
+}
+
+const resp_ = (codigo: number, descripcion: string, eventos = '') =>
+  `<return><codResp>${codigo}</codResp><descResp>${escaparXml(descripcion)}</descResp>${eventos}</return>`;
+
+function reclamoSimulado(sim: SiiSimulado, cuerpo: string): Response {
+  const operacion = /<(?:\w+:)?(ingresarAceptacionReclamoDoc|listarEventosHistDoc|consultarDocDteCedible|consultarFechaRecepcionSii|getVersion)[ >/]/.exec(cuerpo)?.[1];
+  const campo = (n: string) => new RegExp(`<${n}>([^<]*)</${n}>`).exec(cuerpo)?.[1] ?? '';
+  const clave = `${campo('tipoDoc')}-${campo('folio')}`;
+  const eventos = (sim.eventosReclamo[clave] ??= []);
+  const recepcion = sim.fechaRecepcionReclamo[clave] ?? ahoraChile(new Date(Date.now() - 24 * 3600 * 1000));
+
+  switch (operacion) {
+    case 'getVersion':
+      return respuestaRpc('getVersion', '<return>1.1-simulado</return>');
+    case 'consultarFechaRecepcionSii':
+      return respuestaRpc('consultarFechaRecepcionSii', `<return>${recepcion}</return>`);
+    case 'consultarDocDteCedible': {
+      if (eventos.some((e) => RECLAMOS.includes(e.codigo))) {
+        return respuestaRpc(operacion, resp_(24, 'DTE No Cedible, DTE reclamado por el receptor'));
+      }
+      return respuestaRpc(operacion, resp_(23, 'DTE Cedible, sin reclamos'));
+    }
+    case 'listarEventosHistDoc': {
+      if (eventos.length === 0) return respuestaRpc(operacion, resp_(16, 'Documento no presenta eventos de reclamos o acuse de recibo'));
+      const lista = eventos
+        .map(
+          (e) =>
+            `<listaEventosDoc><codEvento>${e.codigo}</codEvento><descEvento>${escaparXml(e.descripcion ?? e.codigo)}</descEvento>` +
+            `<rutResponsable>${e.rutResponsable ?? '12345678'}</rutResponsable><dvResponsable>${e.dvResponsable ?? '5'}</dvResponsable>` +
+            `<fechaEvento>${e.fecha ?? ahoraChile(new Date())}</fechaEvento></listaEventosDoc>`,
+        )
+        .join('');
+      return respuestaRpc(operacion, resp_(15, 'Listado de eventos del documento', lista));
+    }
+    case 'ingresarAceptacionReclamoDoc': {
+      if (sim.forzarCodigoReclamo) return respuestaRpc(operacion, resp_(sim.forzarCodigoReclamo.codigo, sim.forzarCodigoReclamo.descripcion));
+      const accion = campo('accionDoc');
+      if (!['ACD', 'RCD', 'ERM', 'RFP', 'RFT'].includes(accion)) return respuestaRpc(operacion, resp_(4, 'Acción inválida'));
+      if (Date.now() - parteChile(recepcion).getTime() > 8 * 24 * 3600 * 1000) {
+        return respuestaRpc(operacion, resp_(8, 'Pasados 8 días después de la recepción no es posible registrar reclamos o eventos'));
+      }
+      const previo = eventos.find((e) => RECLAMOS.includes(e.codigo));
+      const hay = (c: string) => eventos.some((e) => e.codigo === c);
+      if (hay(accion)) return respuestaRpc(operacion, resp_(7, 'Evento registrado previamente'));
+      if (previo && accion === 'ERM') return respuestaRpc(operacion, resp_(6, `No se puede acusar recibo de mercadería de DTE previamente reclamado por ${previo.codigo}`));
+      if (previo && accion === 'ACD') return respuestaRpc(operacion, resp_(12, `No se puede dar por aceptado DTE previamente rechazado por ${previo.codigo}`));
+      if (hay('ACD') && RECLAMOS.includes(accion)) return respuestaRpc(operacion, resp_(11, 'No se puede reclamar DTE previamente aceptado'));
+      if (hay('ERM') && RECLAMOS.includes(accion)) return respuestaRpc(operacion, resp_(13, 'No se puede reclamar DTE previamente registrado como que acuso recibo mercaderia'));
+      eventos.push({ codigo: accion, fecha: ahoraChile(new Date()) });
+      return respuestaRpc(operacion, resp_(0, 'Acción completada OK'));
+    }
+    default:
+      return new Response(`Operación de reclamo no simulada: ${cuerpo.slice(0, 200)}`, { status: 500 });
+  }
 }

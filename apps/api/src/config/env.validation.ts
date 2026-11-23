@@ -21,6 +21,11 @@ export const envValidationSchema = Joi.object({
     .valid('certificacion', 'produccion')
     .default('certificacion'),
 
+  // Sondeo automático de los buzones de correo de intercambio (IMAP). Desactivado por defecto; nunca corre con
+  // NODE_ENV=test. `BUZON_CORREO_TICK_SEGUNDOS` es cada cuánto se revisa qué buzones ya cumplieron su intervalo.
+  BUZON_CORREO_HABILITADO: Joi.boolean().default(false),
+  BUZON_CORREO_TICK_SEGUNDOS: Joi.number().integer().min(5).default(30),
+
   // Clave de administración bootstrap: opcional, pero si se define debe tener ≥ 32 caracteres.
   API_ADMIN_KEY: Joi.string().min(32).optional().messages({
     'string.min':

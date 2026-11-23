@@ -177,6 +177,11 @@ export class DteSiiClient {
     return semilla;
   }
 
+  /** Descarta el token en caché (p. ej. si otro servicio del SII lo rechazó). */
+  invalidarToken(): void {
+    this.gestorToken.invalidar();
+  }
+
   /** GetTokenFromSeed.jws / getToken (con caché). */
   obtenerToken(): Promise<string> {
     return this.gestorToken.obtener(() => this.solicitarToken());
